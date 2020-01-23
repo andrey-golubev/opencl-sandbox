@@ -1,0 +1,9 @@
+
+AllowShortLoopsOnASingleLine: true
+ColumnLimit: 100
+SpacesBeforeTrailingComments: 2
+IndentWidth: 4
+TabWidth: 4
+AccessModifierOffset: -4
+PointerAlignment: Left
+SpaceAfterTemplateKeyword: false
