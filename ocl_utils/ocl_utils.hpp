@@ -2,6 +2,7 @@
 
 #include "common/require.hpp"
 
+#include <fstream>
 #include <functional>
 #include <iostream>
 #include <string>
@@ -11,6 +12,13 @@
 #include <CL/cl.h>
 
 #define OCL_GUARD(expr) REQUIRE((expr) == CL_SUCCESS)
+#define OCL_GUARD_RET(expr)                                                                        \
+    {                                                                                              \
+        cl_int ret = CL_SUCCESS;                                                                   \
+        (expr);                                                                                    \
+        OCL_GUARD(ret);                                                                            \
+    }
+
 #define PRINTLN(s) std::cout << (s) << std::endl;
 
 std::string type2str(cl_device_type t) {

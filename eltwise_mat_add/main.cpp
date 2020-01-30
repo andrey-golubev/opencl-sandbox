@@ -5,9 +5,9 @@
 #include <opencv2/core.hpp>
 
 // CPP version of matrix summation:
-#include "mat_sum_cpp_inl.hpp"
+#include "mat_add_cpp_inl.hpp"
 // OpenCL version of matrix summation:
-#include "mat_sum_ocl_inl.hpp"
+#include "mat_add_ocl_inl.hpp"
 
 int main(int argc, char* argv[]) {
     constexpr const int rows = 2;
@@ -23,9 +23,9 @@ int main(int argc, char* argv[]) {
     print_cl_info();
 
     // run CPP sum
-    auto cpp_res = eltwise_sum_cpp(a, b);
+    auto cpp_res = eltwise_add_cpp(a, b);
     // run OCL sum
-    auto ocl_res = eltwise_sum_ocl(a, b);
+    auto ocl_res = eltwise_add_ocl(a, b);
 
     CV_Assert(cv::countNonZero(cpp_res != ocl_res) == 0);
     return 0;
