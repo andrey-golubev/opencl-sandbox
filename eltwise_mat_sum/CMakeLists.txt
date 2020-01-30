@@ -3,4 +3,4 @@ project(eltwise_mat_sum)
 
 add_executable(${PROJECT_NAME} main.cpp)
 
-target_link_libraries(${PROJECT_NAME})
+target_link_libraries(${PROJECT_NAME} opencv_core OpenCL)

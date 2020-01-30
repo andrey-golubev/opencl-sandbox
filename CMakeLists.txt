@@ -4,8 +4,12 @@ project(ocl)
 set(CMAKE_CXX_STANDARD 14)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
-set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS} -g -O0 -Wall -Werror -Wno-unused-function")
-set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS} -Wall -Werror -Wno-unused-function")
+set(WARNARGS "-Wall -Werror -Wno-unused-function -Wno-ignored-attributes")
+set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS} -g -O0 ${WARNARGS}")
+set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS} ${WARNARGS}")
+
+# include root folder
+include_directories(${CMAKE_CURRENT_SOURCE_DIR})
 
 # subfolders
 add_subdirectory(img_processor)
