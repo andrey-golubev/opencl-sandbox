@@ -16,11 +16,6 @@ const std::string program_str(R"(
 __kernel void add_uchar(__global const uchar* a, __global const uchar* b, __global uchar* out) {
     int i = get_global_id(0);
     out[i] = a[i] + b[i];
-}
-
-__kernel void add_float(__global const float* a, __global const float* b, __global float* out) {
-    int i = get_global_id(0);
-    out[i] = a[i] + b[i];
 })");
 
 }  // namespace
@@ -55,7 +50,7 @@ cv::Mat eltwise_add_ocl(const cv::Mat& a, const cv::Mat& b, size_t platform_idx 
 
     // create queue
     cl_command_queue queue = nullptr;
-    // TODO: clCreateCommandQueue is deprecated since (?) OpenCL 1.2
+    // TODO: clCreateCommandQueue is deprecated since (?) OpenCL 1.2 - but useful for CUDA
     OCL_GUARD_RET(queue = clCreateCommandQueue(context, device_id, 0, &ret));
 
     // allocate input buffers

@@ -10,8 +10,8 @@
 #include "mat_add_ocl_inl.hpp"
 
 int main(int argc, char* argv[]) {
-    constexpr const int rows = 2;
-    constexpr const int cols = 2;
+    constexpr const int rows = 100;
+    constexpr const int cols = 100;
 
     cv::Mat a(cv::Size(rows, cols), CV_8UC3);
     cv::randu(a, cv::Scalar(0, 0, 0), cv::Scalar(125, 125, 125));
@@ -27,6 +27,6 @@ int main(int argc, char* argv[]) {
     // run OCL sum
     auto ocl_res = eltwise_add_ocl(a, b);
 
-    CV_Assert(cv::countNonZero(cpp_res != ocl_res) == 0);
+    REQUIRE(cv::countNonZero(cpp_res != ocl_res) == 0);
     return 0;
 }
