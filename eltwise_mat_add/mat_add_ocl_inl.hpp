@@ -53,13 +53,14 @@ cv::Mat eltwise_add_ocl(const cv::Mat& a, const cv::Mat& b, size_t platform_idx 
     // work items number must be divisible (no remainder) by the size of the work group
     size_t work_items_size =
         std::ceil(double(a.total() * a.elemSize()) / work_group_size) * work_group_size;
-    OCL_GUARD(clEnqueueNDRangeKernel(e.queue, e.kernel, 1, nullptr, &work_items_size,
-                                     &work_group_size, 0, nullptr, nullptr));
+
+    e.run_nd_range(1, &work_items_size, &work_group_size);
 
     // read output back into this process' memory
     OCL_GUARD_RET(clEnqueueMapBuffer(e.queue, outobj, CL_TRUE, CL_MAP_READ, 0,
                                      out.total() * out.elemSize(), 0, nullptr, nullptr, &ret));
 
+    // release memory objects
     OCL_GUARD(clReleaseMemObject(outobj));
     OCL_GUARD(clReleaseMemObject(bobj));
     OCL_GUARD(clReleaseMemObject(aobj));

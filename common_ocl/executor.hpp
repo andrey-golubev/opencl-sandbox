@@ -88,6 +88,12 @@ struct OclExecutor {
         return *this;
     }
 
+    void run_nd_range(cl_uint work_dim, const size_t* work_items_sizes,
+                      const size_t* work_group_sizes) {
+        OCL_GUARD(clEnqueueNDRangeKernel(queue, kernel, work_dim, nullptr, work_items_sizes,
+                                         work_group_sizes, 0, nullptr, nullptr));
+    }
+
     ~OclExecutor() {
         if (queue != nullptr) {
             OCL_GUARD(clFlush(queue));
