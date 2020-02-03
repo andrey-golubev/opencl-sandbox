@@ -55,7 +55,7 @@ cl_uint get_cl_num_devices(cl_platform_id platform_id, cl_device_type type) {
     return ret_num_devices;
 }
 
-void pring_info_impl(std::vector<std::pair<std::string, std::function<cl_int(std::string&)>>> in) {
+void print_info_impl(std::vector<std::pair<std::string, std::function<cl_int(std::string&)>>> in) {
     for (const auto& e : in) {
         const auto& prefix = e.first;
         const auto& f = e.second;
@@ -81,7 +81,7 @@ void print_cl_info() {
         std::string extra(2, ' ');
         PRINTLN(extra + "-----");
 
-        pring_info_impl({
+        print_info_impl({
             {extra + "Name: ",
              [&](std::string& str) {
                  return clGetPlatformInfo(platform_id, CL_PLATFORM_NAME, str.size(), &str[0], NULL);
@@ -118,7 +118,7 @@ void print_cl_info() {
             PRINTLN(extra + "-----");
             PRINTLN(extra + "OpenCL device information:");
 
-            pring_info_impl({
+            print_info_impl({
                 {extra + "Name: ",
                  [&](std::string& str) {
                      return clGetDeviceInfo(device_id, CL_DEVICE_NAME, str.size(), &str[0], NULL);
