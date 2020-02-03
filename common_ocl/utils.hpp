@@ -1,6 +1,6 @@
 #pragma once
 
-#include "common/require.hpp"
+#include "common/utils.hpp"
 
 #include <fstream>
 #include <functional>
@@ -18,8 +18,6 @@
         (expr); /* expecting `ret` to be updated here */                                           \
         OCL_GUARD(ret);                                                                            \
     }
-
-#define PRINTLN(s) std::cout << (s) << std::endl;
 
 #define OCL_MOVE_PTR(to, from)                                                                     \
     {                                                                                              \
