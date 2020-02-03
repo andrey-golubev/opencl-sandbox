@@ -15,11 +15,23 @@
 #define OCL_GUARD_RET(expr)                                                                        \
     {                                                                                              \
         cl_int ret = CL_SUCCESS;                                                                   \
-        (expr);                                                                                    \
+        (expr); /* expecting `ret` to be updated here */                                           \
         OCL_GUARD(ret);                                                                            \
     }
 
 #define PRINTLN(s) std::cout << (s) << std::endl;
+
+#define OCL_MOVE_PTR(to, from)                                                                     \
+    {                                                                                              \
+        to = from;                                                                                 \
+        from = nullptr;                                                                            \
+    }
+
+#define OCL_MOVE_STRUCT(to, from)                                                                  \
+    {                                                                                              \
+        to = std::move(from);                                                                      \
+        from = {};                                                                                 \
+    }
 
 std::string type2str(cl_device_type t) {
     switch (t) {
@@ -99,9 +111,10 @@ void print_cl_info() {
         PRINTLN(extra + "Number of devices: " + std::to_string(num_devices));
 
         // 2. iterate over devices:
+        PRINTLN("\n" + extra + "Device info:");
+
         std::vector<cl_device_id> devices(num_devices, nullptr);
         OCL_GUARD(clGetDeviceIDs(platform_id, type, num_devices, devices.data(), nullptr));
-        PRINTLN("\n" + extra + "Device info:");
         for (auto device_id : devices) {
             std::string extra(4, ' ');
             PRINTLN(extra + "-----");
