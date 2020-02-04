@@ -11,7 +11,12 @@
 
 #include <CL/cl.h>
 
-#define OCL_GUARD(expr) REQUIRE((expr) == CL_SUCCESS)
+void ocl_guard(int value, const char* expr) {
+    REQUIRE2(value == CL_SUCCESS,
+             expr + std::string(" == ") + std::to_string(value) + " and != CL_SUCCESS(0)");
+    return;
+}
+#define OCL_GUARD(expr) ocl_guard((expr), #expr)
 #define OCL_GUARD_RET(expr)                                                                        \
     {                                                                                              \
         cl_int ret = CL_SUCCESS;                                                                   \

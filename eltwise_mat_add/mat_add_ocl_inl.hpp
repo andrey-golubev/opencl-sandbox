@@ -14,10 +14,22 @@
 namespace {
 
 const std::string program_str(R"(
-__kernel void add_uchar(__global const uchar* a, __global const uchar* b, __global uchar* out) {
-    int i = get_global_id(0);
-    out[i] = a[i] + b[i];
-})");
+__kernel void add_uchar(__global const uchar* a,
+                        __global const uchar* b,
+                        __global uchar* out,
+                        int rows,
+                        int cols,
+                        int chan) {
+    int i = get_global_id(0);  // row index
+    int j = get_global_id(1);  // col index
+
+    // process one row:
+    for (int c = 0; c < chan; ++c) {
+        int idx = i * cols * chan + j * chan + c;
+        out[idx] = a[idx] + b[idx];
+    }
+}
+)");
 
 }  // namespace
 
@@ -47,14 +59,20 @@ cv::Mat eltwise_add_ocl(const cv::Mat& a, const cv::Mat& b, size_t platform_idx 
     OCL_GUARD(clSetKernelArg(e.kernel, 0, sizeof(cl_mem), &aobj));
     OCL_GUARD(clSetKernelArg(e.kernel, 1, sizeof(cl_mem), &bobj));
     OCL_GUARD(clSetKernelArg(e.kernel, 2, sizeof(cl_mem), &outobj));
+    int chan = a.channels();
+    OCL_GUARD(clSetKernelArg(e.kernel, 3, sizeof(int), &a.rows));
+    OCL_GUARD(clSetKernelArg(e.kernel, 4, sizeof(int), &a.cols));
+    OCL_GUARD(clSetKernelArg(e.kernel, 5, sizeof(int), &chan));
 
     // execute kernel
-    size_t work_group_size = 100;
+    size_t work_group_sizes[] = {10, 10};
     // work items number must be divisible (no remainder) by the size of the work group
-    size_t work_items_size =
-        std::ceil(double(a.total() * a.elemSize()) / work_group_size) * work_group_size;
+    size_t work_items_sizes[] = {
+        size_t(std::ceil(double(a.rows) / work_group_sizes[0])) * work_group_sizes[0],
+        size_t(std::ceil(double(a.cols) / work_group_sizes[1])) * work_group_sizes[1],
+    };
 
-    e.run_nd_range(1, &work_items_size, &work_group_size);
+    e.run_nd_range(2, work_items_sizes, work_group_sizes);
 
     // read output back into this process' memory
     OCL_GUARD_RET(clEnqueueMapBuffer(e.queue, outobj, CL_TRUE, CL_MAP_READ, 0,
