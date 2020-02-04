@@ -23,7 +23,7 @@ __kernel void add_uchar(__global const uchar* a,
     int i = get_global_id(0);  // row index
     int j = get_global_id(1);  // col index
 
-    // process one row:
+    // process one pixel (but all channels)
     for (int c = 0; c < chan; ++c) {
         int idx = i * cols * chan + j * chan + c;
         out[idx] = a[idx] + b[idx];
