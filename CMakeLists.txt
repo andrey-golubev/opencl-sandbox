@@ -19,3 +19,4 @@ include_directories(${CMAKE_CURRENT_SOURCE_DIR})
 # subfolders
 add_subdirectory(img_processor)
 add_subdirectory(eltwise_mat_add)
+add_subdirectory(imgproc_app)
