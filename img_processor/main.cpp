@@ -39,8 +39,8 @@ int main(int argc, char* argv[]) {
     cv::Mat processed(bgr.size(), CV_8UC1);
     for (int i = 0; i < bgr.rows; ++i) {
         for (int j = 0; j < bgr.cols; ++j) {
-            auto bgr_pixel = bgr.at<cv::Vec3b>(i * bgr.rows + j);
-            processed.at<uint8_t>(i * bgr.rows + j) =
+            auto bgr_pixel = bgr.at<cv::Vec3b>(i * bgr.cols + j);
+            processed.at<uint8_t>(i * bgr.cols + j) =
                 threshold(rgb2gray(bgr_pixel[2], bgr_pixel[1], bgr_pixel[0]), 128);
         }
     }
