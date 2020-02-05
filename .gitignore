@@ -5,3 +5,4 @@ Makefile
 *.*~
 .vscode/
 build/
+.test_data/

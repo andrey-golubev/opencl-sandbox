@@ -3,6 +3,9 @@
 #include "common/require.hpp"
 #include "common_ocl/utils.hpp"
 
+#include <string>
+
+#include <vector>
 struct OclPrimitives {
     cl_platform_id platform_id = nullptr;
     cl_device_id device_id = nullptr;
@@ -54,21 +57,25 @@ struct OclExecutor {
 
     cl_command_queue queue = nullptr;
     cl_program program = nullptr;
-    cl_kernel kernel = nullptr;
+    std::vector<cl_kernel> kernels = {};
 
-    OclExecutor(OclPrimitives&& prims, const char** programs, const size_t* sizes,
-                const char* kernel_name)
+    OclExecutor(OclPrimitives&& prims, const std::string& program_str,
+                std::vector<const char*>&& kernel_names)
         : p(std::move(prims)) {
         // create queue
         // TODO: clCreateCommandQueue is deprecated since (?) OpenCL 1.2 - but useful for CUDA
         OCL_GUARD_RET(queue = clCreateCommandQueue(p.context, p.device_id, 0, &ret));
 
         // create program
+        const char* programs[] = {program_str.c_str()};
+        const size_t sizes[] = {program_str.size()};
         OCL_GUARD_RET(program = clCreateProgramWithSource(p.context, 1, programs, sizes, &ret));
         OCL_GUARD(clBuildProgram(program, 1, &p.device_id, nullptr, nullptr, nullptr));
 
         // create kernel
-        OCL_GUARD_RET(kernel = clCreateKernel(program, kernel_name, &ret));
+        for (const auto& name : kernel_names) {
+            OCL_GUARD_RET(kernels.emplace_back(clCreateKernel(program, name, &ret)));
+        }
     }
 
     OclExecutor(const OclExecutor& other) = delete;
@@ -76,7 +83,7 @@ struct OclExecutor {
         OCL_MOVE_STRUCT(p, other.p);
         OCL_MOVE_PTR(queue, other.queue);
         OCL_MOVE_PTR(program, other.program);
-        OCL_MOVE_PTR(kernel, other.kernel);
+        kernels = std::move(other.kernels);
     }
 
     OclExecutor& operator=(const OclExecutor& other) = delete;
@@ -84,14 +91,15 @@ struct OclExecutor {
         OCL_MOVE_STRUCT(p, other.p);
         OCL_MOVE_PTR(queue, other.queue);
         OCL_MOVE_PTR(program, other.program);
-        OCL_MOVE_PTR(kernel, other.kernel);
+        kernels = std::move(other.kernels);
         return *this;
     }
 
     void run_nd_range(cl_uint work_dim, const size_t* work_items_sizes,
-                      const size_t* work_group_sizes) {
-        OCL_GUARD(clEnqueueNDRangeKernel(queue, kernel, work_dim, nullptr, work_items_sizes,
-                                         work_group_sizes, 0, nullptr, nullptr));
+                      const size_t* work_group_sizes, size_t kernel_idx) {
+        REQUIRE(kernel_idx < kernels.size());
+        OCL_GUARD(clEnqueueNDRangeKernel(queue, kernels[kernel_idx], work_dim, nullptr,
+                                         work_items_sizes, work_group_sizes, 0, nullptr, nullptr));
     }
 
     ~OclExecutor() {
@@ -99,7 +107,9 @@ struct OclExecutor {
             OCL_GUARD(clFlush(queue));
             OCL_GUARD(clFinish(queue));
         }
-        if (kernel != nullptr) {
+        for (auto& kernel : kernels) {
+            if (kernel == nullptr)
+                continue;
             OCL_GUARD(clReleaseKernel(kernel));
         }
         if (program != nullptr) {

@@ -28,6 +28,19 @@ std::vector<std::basic_string<CharT>> split(const std::basic_string<CharT>& src,
     }
     return dst;
 }
+
+// OpenCL can produce inaccurate results (compared to C++), so comparing with tolerance
+bool equal_with_tolerance(cv::Mat in1, cv::Mat in2, double abs_tolerance) {
+    double err = cv::norm(in1, in2, cv::NORM_INF);
+    double tolerance = abs_tolerance;
+    if (err > tolerance) {
+        std::cout << "equality check fail: err=" << err << ", accepted tolerance=" << tolerance
+                  << std::endl;
+        return false;
+    } else {
+        return true;
+    }
+}
 }  // namespace
 
 int main(int argc, char* argv[]) {
@@ -61,10 +74,29 @@ int main(int argc, char* argv[]) {
     cv::Mat rgb;
     cv::cvtColor(bgr, rgb, cv::COLOR_BGR2RGB);
 
-    cv::Mat ocv = process(rgb);
-    auto processed_name = parts[0] + "_gray_blur." + parts[1];
-    PRINTLN("Saved processed image to: " + processed_name);
-    cv::imwrite(processed_name, ocv);
+    cv::Mat ocv = process_rgb_cpp(rgb);
+    cv::Mat ocl = process_rgb_ocl(rgb);
+
+    // TODO: might be useful for debugging
+    // auto gray = rgb2gray_cpp(rgb);
+    // PRINTLN("----");
+    // PRINTLN(gray);
+    // PRINTLN("----");
+    // PRINTLN(moving_avg_cpp(gray));
+    // PRINTLN("----");
+    // PRINTLN(moving_avg_ocl(gray));
+    // PRINTLN("----");
+
+    auto processed_name_ocv = parts[0] + "_rgb2gray_blur_ocv." + parts[1];
+    PRINTLN("Saved processed image to: " + processed_name_ocv);
+    cv::imwrite(processed_name_ocv, ocv);
+
+    auto processed_name_ocl = parts[0] + "_rgb2gray_blur_ocl." + parts[1];
+    PRINTLN("Saved processed image to: " + processed_name_ocl);
+    cv::imwrite(processed_name_ocl, ocl);
+
+    // TODO: not always consistent (OpenCL specifics?)
+    REQUIRE(equal_with_tolerance(ocv, ocl, 2));
 
     return 0;
 }

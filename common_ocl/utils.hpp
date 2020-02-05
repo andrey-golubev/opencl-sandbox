@@ -25,16 +25,10 @@ void ocl_guard(int value, const char* expr) {
     }
 
 #define OCL_MOVE_PTR(to, from)                                                                     \
-    {                                                                                              \
-        to = from;                                                                                 \
-        from = nullptr;                                                                            \
-    }
+    { std::swap(to, from); }
 
 #define OCL_MOVE_STRUCT(to, from)                                                                  \
-    {                                                                                              \
-        to = std::move(from);                                                                      \
-        from = {};                                                                                 \
-    }
+    { std::swap(to, from); }
 
 std::string type2str(cl_device_type t) {
     switch (t) {

@@ -3,7 +3,7 @@
 #include "common_ocl/executor.hpp"
 #include "common_ocl/utils.hpp"
 
-#include "opencv2/core.hpp"
+#include <opencv2/core.hpp>
 
 #include <algorithm>
 #include <iostream>
@@ -36,9 +36,7 @@ __kernel void add_uchar(__global const uchar* a,
 // interface:
 cv::Mat eltwise_add_ocl(const cv::Mat& a, const cv::Mat& b, size_t platform_idx = 0,
                         size_t device_idx = 0) {
-    const char* programs[] = {program_str.c_str()};
-    const size_t sizes[] = {program_str.size()};
-    static OclExecutor e(OclPrimitives(platform_idx, device_idx), programs, sizes, "add_uchar");
+    static OclExecutor e(OclPrimitives(platform_idx, device_idx), program_str, {"add_uchar"});
 
     // allocate input buffers
     cl_mem aobj = nullptr;
@@ -56,13 +54,13 @@ cv::Mat eltwise_add_ocl(const cv::Mat& a, const cv::Mat& b, size_t platform_idx 
                                           out.total() * out.elemSize(), out.data, &ret));
 
     // set kernel parameters (in/out)
-    OCL_GUARD(clSetKernelArg(e.kernel, 0, sizeof(cl_mem), &aobj));
-    OCL_GUARD(clSetKernelArg(e.kernel, 1, sizeof(cl_mem), &bobj));
-    OCL_GUARD(clSetKernelArg(e.kernel, 2, sizeof(cl_mem), &outobj));
+    OCL_GUARD(clSetKernelArg(e.kernels[0], 0, sizeof(cl_mem), &aobj));
+    OCL_GUARD(clSetKernelArg(e.kernels[0], 1, sizeof(cl_mem), &bobj));
+    OCL_GUARD(clSetKernelArg(e.kernels[0], 2, sizeof(cl_mem), &outobj));
     int chan = a.channels();
-    OCL_GUARD(clSetKernelArg(e.kernel, 3, sizeof(int), &a.rows));
-    OCL_GUARD(clSetKernelArg(e.kernel, 4, sizeof(int), &a.cols));
-    OCL_GUARD(clSetKernelArg(e.kernel, 5, sizeof(int), &chan));
+    OCL_GUARD(clSetKernelArg(e.kernels[0], 3, sizeof(int), &a.rows));
+    OCL_GUARD(clSetKernelArg(e.kernels[0], 4, sizeof(int), &a.cols));
+    OCL_GUARD(clSetKernelArg(e.kernels[0], 5, sizeof(int), &chan));
 
     // execute kernel
     size_t work_group_sizes[] = {10, 10};
@@ -72,7 +70,7 @@ cv::Mat eltwise_add_ocl(const cv::Mat& a, const cv::Mat& b, size_t platform_idx 
         size_t(std::ceil(double(a.cols) / work_group_sizes[1])) * work_group_sizes[1],
     };
 
-    e.run_nd_range(2, work_items_sizes, work_group_sizes);
+    e.run_nd_range(2, work_items_sizes, work_group_sizes, 0);
 
     // read output back into this process' memory
     OCL_GUARD_RET(clEnqueueMapBuffer(e.queue, outobj, CL_TRUE, CL_MAP_READ, 0,
