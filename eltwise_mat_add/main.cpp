@@ -21,9 +21,7 @@ int main(int argc, char* argv[]) {
     if (argc != 1) {
 
         if (argc != 3) {
-            PRINTLN("Usage: " + std::string(argv[0]) + " [PLATFORM_ID] [DEVICE_ID]");
-            PRINTLN("If platform and/or device ids are specified. The mode is quiet - no OpenCL "
-                    "info reported");
+            PRINTLN("Usage: " + std::string(argv[0]) + " [CL_PLATFORM_ID CL_DEVICE_ID]");
             return 1;
         }
 
