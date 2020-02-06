@@ -31,20 +31,41 @@ template<typename F> std::string check_run(F f, int platform_id, int device_id) 
     return "OK";
 }
 
-std::map<std::string, void (*)(int, int)> tests_map = {};
+std::map<std::string, void (*)(int, int)> ALL_TESTS = {};
 #define TEST(suffix)                                                                               \
-    tests_map["test_" #suffix] = [](int platform_id, int device_id) /* test body starts here */
+    ALL_TESTS["TEST_" #suffix] = [](int platform_id, int device_id) /* test body starts here */
 
 void declare_tests() {
-    TEST(123) {
+    TEST(RGB2GRAY) {
         cv::Mat rgb(cv::Size(12, 12), CV_8UC3);
         cv::randu(rgb, cv::Scalar(0, 0, 0), cv::Scalar(255, 255, 255));
 
-        cv::Mat ocv = process_rgb_cpp(rgb);
+        cv::Mat cpp = rgb2gray_cpp(rgb);
+        cv::Mat ocl = rgb2gray_ocl(rgb, platform_id, device_id);
+
+        REQUIRE(equal_with_tolerance(cpp, ocl, 2));
+    };
+
+    TEST(MOVING_AVG) {
+        cv::Mat gray(cv::Size(12, 12), CV_8UC1);
+        cv::randu(gray, cv::Scalar(0), cv::Scalar(255));
+
+        cv::Mat cpp = moving_avg_cpp(gray);
+        cv::Mat ocl = moving_avg_ocl(gray, platform_id, device_id);
+
+        // TODO: not always consistent - implementations are too different?
+        REQUIRE(equal_with_tolerance(cpp, ocl, 2));
+    };
+
+    TEST(FULL_PIPELINE) {
+        cv::Mat rgb(cv::Size(12, 12), CV_8UC3);
+        cv::randu(rgb, cv::Scalar(0, 0, 0), cv::Scalar(255, 255, 255));
+
+        cv::Mat cpp = process_rgb_cpp(rgb);
         cv::Mat ocl = process_rgb_ocl(rgb, platform_id, device_id);
 
         // TODO: not always consistent - implementations are too different?
-        REQUIRE(equal_with_tolerance(ocv, ocl, 2));
+        REQUIRE(equal_with_tolerance(cpp, ocl, 2));
     };
 }
 
@@ -58,8 +79,8 @@ int main(int argc, char* argv[]) {
 
     int platform_id = 0, device_id = 0;
     if (argc == 3) {
-        platform_id = std::stoi(argv[2]);
-        device_id = std::stoi(argv[3]);
+        platform_id = std::stoi(argv[1]);
+        device_id = std::stoi(argv[2]);
     }
 
     PRINTLN("-----");
@@ -69,7 +90,7 @@ int main(int argc, char* argv[]) {
 
     declare_tests();
 
-    for (const auto& it : tests_map) {
+    for (const auto& it : ALL_TESTS) {
         const auto& name = it.first;
         const auto& test = it.second;
         PRINTLN("RUN [" + name + "]");

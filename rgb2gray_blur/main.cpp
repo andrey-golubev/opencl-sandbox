@@ -58,33 +58,18 @@ int main(int argc, char* argv[]) {
             std::to_string(device_id));
     PRINTLN("-----\n");
 
+    // Read input image:
     cv::Mat bgr = cv::imread(argv[1]);  // OpenCV always reads in BGR instead of RGB
     cv::Mat rgb;
     cv::cvtColor(bgr, rgb, cv::COLOR_BGR2RGB);
 
-    cv::Mat ocv = process_rgb_cpp(rgb);
+    // Run OpenCL pipeline:
     cv::Mat ocl = process_rgb_ocl(rgb);
 
-    // TODO: might be useful for debugging
-    // auto gray = rgb2gray_cpp(rgb);
-    // PRINTLN("----");
-    // PRINTLN(gray);
-    // PRINTLN("----");
-    // PRINTLN(moving_avg_cpp(gray));
-    // PRINTLN("----");
-    // PRINTLN(moving_avg_ocl(gray));
-    // PRINTLN("----");
-
-    auto processed_name_ocv = parts[0] + "_rgb2gray_blur_ocv." + parts[1];
-    PRINTLN("Saved processed image to: " + processed_name_ocv);
-    cv::imwrite(processed_name_ocv, ocv);
-
-    auto processed_name_ocl = parts[0] + "_rgb2gray_blur_ocl." + parts[1];
+    // Save output image:
+    auto processed_name_ocl = parts[0] + "_rgb2gray_blur." + parts[1];
     PRINTLN("Saved processed image to: " + processed_name_ocl);
     cv::imwrite(processed_name_ocl, ocl);
-
-    // TODO: not always consistent (OpenCL specifics?)
-    REQUIRE(equal_with_tolerance(ocv, ocl, 2));
 
     return 0;
 }
