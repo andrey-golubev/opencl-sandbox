@@ -50,8 +50,14 @@ void declare_tests() {
         cv::Mat gray(cv::Size(12, 12), CV_8UC1);
         cv::randu(gray, cv::Scalar(0), cv::Scalar(255));
 
+        // PRINTLN(gray);
+        // PRINTLN("----");
         cv::Mat cpp = moving_avg_cpp(gray);
+        // PRINTLN(cpp);
+        // PRINTLN("----");
         cv::Mat ocl = moving_avg_ocl(gray, platform_id, device_id);
+        // PRINTLN(ocl);
+        // PRINTLN("----");
 
         // TODO: not always consistent - implementations are too different?
         REQUIRE(equal_with_tolerance(cpp, ocl, 2));

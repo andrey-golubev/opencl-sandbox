@@ -39,3 +39,39 @@ cv::Mat moving_avg_cpp(cv::Mat gray) {
     cv::boxFilter(gray, out, -1, cv::Size(5, 5));
     return out;
 }
+
+int fix(int v, int max_v) {
+    if (v < 0) {
+        return -v;
+    } else if (v > max_v) {
+        const int diff = (v - max_v);
+        return max_v - diff;
+    }
+    return v;
+}
+
+cv::Mat moving_avg_cpp2(cv::Mat gray) {
+    cv::Mat out = cv::Mat::zeros(gray.size(), gray.type());
+
+    const int rows = gray.rows, cols = gray.cols;
+    const int k_size = 5;
+    const int center_shift = (k_size - 1) / 2;
+
+    for (int idx_i = 0; idx_i < rows; ++idx_i) {
+        for (int idx_j = 0; idx_j < cols; ++idx_j) {
+
+            int sum = 0;
+            for (int i = 0; i < k_size; ++i) {
+                const int ii = fix(idx_i + i - center_shift, rows - 1);
+                for (int j = 0; j < k_size; ++j) {
+                    const int jj = fix(idx_j + j - center_shift, cols - 1);
+                    sum += gray.data[ii * cols + jj];
+                }
+            }
+
+            double dsum = sum;
+            out.data[idx_i * cols + idx_j] = std::round(dsum / (k_size * k_size));
+        }
+    }
+    return out;
+}

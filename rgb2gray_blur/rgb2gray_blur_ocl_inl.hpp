@@ -13,43 +13,34 @@ __kernel void rgb2gray(__global const uchar* rgb, __global uchar* gray) {
     gray[i] = 0.3 * r + 0.59 * g + 0.11 * b;
 }
 
-int fix_border(int r, int val) {
-    return val + (val - r);
+int fix(int v, int max_v) {
+    if (v < 0) {
+        return -v;
+    } else if (v > max_v) {
+        const int diff = (v - max_v);
+        return max_v - diff;
+    }
+    return v;
 }
 
 __kernel void moving_avg5x5(__global const uchar* gray, __global uchar* out, int rows, int cols) {
-    int idx_i = get_global_id(0);  // pixel index for row
-    int idx_j = get_global_id(1);  // pixel index for col
+    const int idx_i = get_global_id(0);  // pixel index for row
+    const int idx_j = get_global_id(1);  // pixel index for col
 
-    uint sum = 0;
-    for (int i = -2; i <= 2; ++i) {
-        const int new_i = idx_i + i;
+    const int k_size = 5;
+    const int center_shift = (k_size - 1) / 2;  // int(5 / 2)
 
-        // perform one of the two fixes:
-        int fixed_i = new_i;
-        if (new_i < 0) {
-            fixed_i = fix_border(new_i, 0);
-        } else if (new_i >= rows) {
-            fixed_i = fix_border(new_i + 1, rows);
-        }
-
-        for (int j = -2; j <= 2; ++j) {
-            const int new_j = idx_j + j;
-
-            // perform one of the two fixes:
-            int fixed_j = new_j;
-            if (new_j < 0) {
-                fixed_j = fix_border(new_j, 0);
-            } else if (new_j >= cols) {
-                fixed_j = fix_border(new_j + 1, cols);
-            }
-
-            // update sum
-            sum += gray[fixed_i * cols + fixed_j];
+    int sum = 0;
+    for (int i = 0; i < k_size; ++i) {
+        const int ii = fix(idx_i + i - center_shift, rows - 1);
+        for (int j = 0; j < k_size; ++j) {
+            const int jj = fix(idx_j + j - center_shift, cols - 1);
+            sum += gray[ii * cols + jj];
         }
     }
 
-    out[idx_i * cols + idx_j] = round(0.04 * sum);  // 0.04 = 1 / 25
+    double dsum = sum;
+    out[idx_i * cols + idx_j] = round(dsum / (k_size * k_size));
 }
 
 )");
@@ -122,7 +113,7 @@ cv::Mat moving_avg_ocl(cv::Mat gray, size_t platform_idx = 0, size_t device_idx 
     // execute kernels:
     // moving_avg5x5:
     {
-        size_t work_group_sizes[] = {10, 10};
+        size_t work_group_sizes[] = {3, 3};  // TODO: work group size affects the computation! WTF
         // work items number must be divisible (no remainder) by the size of the work group
         size_t work_items_sizes[] = {
             size_t(std::ceil(double(gray.rows) / work_group_sizes[0])) * work_group_sizes[0],
@@ -190,7 +181,7 @@ cv::Mat process_rgb_ocl(cv::Mat rgb, size_t platform_idx = 0, size_t device_idx 
 
     // moving_avg5x5:
     {
-        size_t work_group_sizes[] = {10, 10};
+        size_t work_group_sizes[] = {3, 3};
         // work items number must be divisible (no remainder) by the size of the work group
         size_t work_items_sizes[] = {
             size_t(std::ceil(double(rgb.rows) / work_group_sizes[0])) * work_group_sizes[0],
