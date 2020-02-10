@@ -57,13 +57,21 @@ void declare_tests() {
     };
 
     TEST(FULL_PIPELINE) {
-        cv::Mat rgb(cv::Size(12, 12), CV_8UC3);
-        cv::randu(rgb, cv::Scalar(0, 0, 0), cv::Scalar(255, 255, 255));
+        cv::Size test_sizes[] = {
+            cv::Size(1920, 1080),
+            cv::Size(640, 480),
+            cv::Size(189, 279),
+            cv::Size(12, 12),
+        };
+        for (const auto& size : test_sizes) {
+            cv::Mat rgb(size, CV_8UC3);
+            cv::randu(rgb, cv::Scalar(0, 0, 0), cv::Scalar(255, 255, 255));
 
-        cv::Mat cpp = process_rgb_cpp(rgb);
-        cv::Mat ocl = process_rgb_ocl(rgb, platform_id, device_id);
+            cv::Mat cpp = process_rgb_cpp(rgb);
+            cv::Mat ocl = process_rgb_ocl(rgb, platform_id, device_id);
 
-        REQUIRE(equal_with_tolerance(cpp, ocl, 2));
+            REQUIRE(equal_with_tolerance(cpp, ocl, 2));
+        }
     };
 }
 

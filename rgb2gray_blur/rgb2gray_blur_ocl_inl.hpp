@@ -23,9 +23,21 @@ int fix(int v, int max_v) {
     return v;
 }
 
+bool out_of_bounds(int x, int l, int r) {
+    if (x < l || x > r) {
+        return true;
+    }
+    return false;
+}
+
 __kernel void moving_avg5x5(__global const uchar* gray, __global uchar* out, int rows, int cols) {
     const int idx_i = get_global_id(0);  // pixel index for row
     const int idx_j = get_global_id(1);  // pixel index for col
+
+    // skip extra work items
+    if (out_of_bounds(idx_i, 0, rows - 1) || out_of_bounds(idx_j, 0, cols - 1)) {
+        return;
+    }
 
     const int k_size = 5;
     const int center_shift = (k_size - 1) / 2;  // int(5 / 2)
@@ -71,8 +83,7 @@ cv::Mat rgb2gray_ocl(cv::Mat rgb, size_t platform_idx = 0, size_t device_idx = 0
         size_t work_group_sizes[] = {10};
         // work items number must be divisible (no remainder) by the size of the work group
         size_t work_items_sizes[] = {
-            size_t(std::ceil(double(rgb.rows * rgb.cols) / work_group_sizes[0])) *
-                work_group_sizes[0],
+            size_t(std::ceil(double(rgb.total()) / work_group_sizes[0])) * work_group_sizes[0],
         };
 
         e.run_nd_range(1, work_items_sizes, work_group_sizes, 0);
@@ -113,7 +124,7 @@ cv::Mat moving_avg_ocl(cv::Mat gray, size_t platform_idx = 0, size_t device_idx 
     // execute kernels:
     // moving_avg5x5:
     {
-        size_t work_group_sizes[] = {3, 3};  // TODO: work group size affects the computation! WTF
+        size_t work_group_sizes[] = {10, 10};
         // work items number must be divisible (no remainder) by the size of the work group
         size_t work_items_sizes[] = {
             size_t(std::ceil(double(gray.rows) / work_group_sizes[0])) * work_group_sizes[0],
@@ -172,8 +183,7 @@ cv::Mat process_rgb_ocl(cv::Mat rgb, size_t platform_idx = 0, size_t device_idx 
         size_t work_group_sizes[] = {10};
         // work items number must be divisible (no remainder) by the size of the work group
         size_t work_items_sizes[] = {
-            size_t(std::ceil(double(rgb.rows * rgb.cols) / work_group_sizes[0])) *
-                work_group_sizes[0],
+            size_t(std::ceil(double(rgb.total()) / work_group_sizes[0])) * work_group_sizes[0],
         };
 
         e.run_nd_range(1, work_items_sizes, work_group_sizes, 0);
