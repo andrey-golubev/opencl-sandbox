@@ -12,6 +12,7 @@ set(WARNARGS "-Wall -Werror -Wno-unused-function -Wno-ignored-attributes ${WARNA
 # rules for debug and release
 set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS} -g -O0 ${WARNARGS}")
 set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS} -O2 ${WARNARGS}")
+set(CMAKE_CXX_FLAGS_RELWITHDEBINFO "${CMAKE_CXX_FLAGS} -g -O2 ${WARNARGS}")
 
 # include root folder
 include_directories(${CMAKE_CURRENT_SOURCE_DIR})

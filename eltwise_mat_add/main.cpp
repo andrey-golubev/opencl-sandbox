@@ -52,7 +52,7 @@ int main(int argc, char* argv[]) {
     REQUIRE(cv::countNonZero(cpp_res != ocl_res) == 0);
 
     // compare performance:
-    std::map<std::string, std::int64_t> perf_results = {};
+    std::map<std::string, std::uint64_t> perf_results = {};
     int iters = 10000;
     perf_results["ocv"] = measure(iters, [&]() { eltwise_add_ocv(a, b); });
     perf_results["ocl"] = measure(iters, [&]() { eltwise_add_ocl(a, b, platform_id, device_id); });

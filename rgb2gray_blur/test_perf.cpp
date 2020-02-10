@@ -34,9 +34,9 @@ std::pair<std::string, std::string> check_run(F f, int platform_id, int device_i
     return {"OK", std::to_string(res) + " microsec"};
 }
 
-constexpr const std::size_t ITERS = 10000;
+constexpr const std::size_t ITERS = 1000;
 
-std::map<std::string, int64_t (*)(int, int, cv::Size)> ALL_PERF_TESTS = {};
+std::map<std::string, std::uint64_t (*)(int, int, cv::Size)> ALL_PERF_TESTS = {};
 #define PERF(suffix)                                                                               \
     ALL_PERF_TESTS["TEST_" #suffix] = [](int platform_id, int device_id,                           \
                                          cv::Size size) /* test body starts here */
@@ -45,13 +45,17 @@ void declare_tests() {
     PERF(OCL_BASELINE) {
         cv::Mat rgb(size, CV_8UC3);
         cv::randu(rgb, cv::Scalar(0, 0, 0), cv::Scalar(255, 255, 255));
-        return measure(ITERS, [&]() { process_rgb_ocl(rgb, platform_id, device_id); });
+        std::uint64_t time =
+            measure(ITERS, [&]() { process_rgb_ocl(rgb, platform_id, device_id); });
+        return time / ITERS;
     };
 
     PERF(OCL_OPTIMIZED) {
         cv::Mat rgb(size, CV_8UC3);
         cv::randu(rgb, cv::Scalar(0, 0, 0), cv::Scalar(255, 255, 255));
-        return measure(ITERS, [&]() { process_rgb_ocl_opt(rgb, platform_id, device_id); });
+        std::uint64_t time =
+            measure(ITERS, [&]() { process_rgb_ocl_opt(rgb, platform_id, device_id); });
+        return time / ITERS;
     };
 }
 

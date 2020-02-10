@@ -4,7 +4,7 @@
 #include <cstdint>
 
 template<typename IterFunction>
-std::int64_t measure(std::size_t iters, IterFunction f, bool warmup = true) {
+std::uint64_t measure(std::size_t iters, IterFunction f, bool warmup = true) {
     using namespace std::chrono;
 
     if (warmup) {
