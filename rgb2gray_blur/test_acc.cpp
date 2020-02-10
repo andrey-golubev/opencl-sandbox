@@ -10,6 +10,8 @@
 #include "rgb2gray_blur_cpp_inl.hpp"
 // OpenCL image processing:
 #include "rgb2gray_blur_ocl_inl.hpp"
+// OpenCL optimized image processing:
+#include "rgb2gray_blur_ocl_opt_inl.hpp"
 
 #include "common/utils.hpp"
 #include "equal.hpp"
@@ -69,6 +71,44 @@ void declare_tests() {
 
             cv::Mat cpp = process_rgb_cpp(rgb);
             cv::Mat ocl = process_rgb_ocl(rgb, platform_id, device_id);
+
+            REQUIRE(equal_with_tolerance(cpp, ocl, 2));
+        }
+    };
+
+    TEST(RGB2GRAY_OPT_OCL) {
+        cv::Mat rgb(cv::Size(12, 12), CV_8UC3);
+        cv::randu(rgb, cv::Scalar(0, 0, 0), cv::Scalar(255, 255, 255));
+
+        cv::Mat cpp = rgb2gray_cpp(rgb);
+        cv::Mat ocl = rgb2gray_ocl_opt(rgb, platform_id, device_id);
+
+        REQUIRE(equal_with_tolerance(cpp, ocl, 2));
+    };
+
+    TEST(MOVING_AVG_OPT_OCL) {
+        cv::Mat gray(cv::Size(12, 12), CV_8UC1);
+        cv::randu(gray, cv::Scalar(0), cv::Scalar(255));
+
+        cv::Mat cpp = moving_avg_cpp(gray);
+        cv::Mat ocl = moving_avg_ocl_opt(gray, platform_id, device_id);
+
+        REQUIRE(equal_with_tolerance(cpp, ocl, 2));
+    };
+
+    TEST(FULL_PIPELINE_OPT_OCL) {
+        cv::Size test_sizes[] = {
+            cv::Size(1920, 1080),
+            cv::Size(640, 480),
+            cv::Size(189, 279),
+            cv::Size(12, 12),
+        };
+        for (const auto& size : test_sizes) {
+            cv::Mat rgb(size, CV_8UC3);
+            cv::randu(rgb, cv::Scalar(0, 0, 0), cv::Scalar(255, 255, 255));
+
+            cv::Mat cpp = process_rgb_cpp(rgb);
+            cv::Mat ocl = process_rgb_ocl_opt(rgb, platform_id, device_id);
 
             REQUIRE(equal_with_tolerance(cpp, ocl, 2));
         }
