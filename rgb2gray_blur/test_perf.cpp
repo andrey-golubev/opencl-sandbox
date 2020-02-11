@@ -34,7 +34,7 @@ std::pair<std::string, std::string> check_run(F f, int platform_id, int device_i
     return {"OK", std::to_string(double(res) / 1000) + " msec"};
 }
 
-constexpr const std::size_t ITERS = 5000;
+constexpr const std::size_t ITERS = 3000;
 
 std::map<std::string, std::uint64_t (*)(int, int, cv::Size)> ALL_PERF_TESTS = {};
 #define PERF(suffix)                                                                               \
@@ -88,13 +88,13 @@ int main(int argc, char* argv[]) {
 
     declare_tests();
 
-    cv::Size sizes[] = {cv::Size(1920, 1080), cv::Size(640, 480), cv::Size(4096, 2160)};
+    cv::Size sizes[] = {cv::Size(4096, 2160), cv::Size(1920, 1080), cv::Size(640, 480)};
     for (const auto& it : ALL_PERF_TESTS) {
         const auto& name = it.first;
         const auto& perf_test = it.second;
 
         for (const auto& size : sizes) {
-            auto res = check_run(perf_test, platform_id, device_id, sizes[0]);
+            auto res = check_run(perf_test, platform_id, device_id, size);
             PRINTLN("RUN [" + name + std::to_string(size) + "]");
             PRINTLN("TIME: " + res.second);
             PRINTLN("RUN [" + name + "]: " + res.first);
