@@ -70,7 +70,17 @@ struct OclExecutor {
         const char* programs[] = {program_str.c_str()};
         const size_t sizes[] = {program_str.size()};
         OCL_GUARD_RET(program = clCreateProgramWithSource(p.context, 1, programs, sizes, &ret));
-        OCL_GUARD(clBuildProgram(program, 1, &p.device_id, nullptr, nullptr, nullptr));
+        OCL_GUARD_CUSTOM(clBuildProgram(program, 1, &p.device_id, nullptr, nullptr, nullptr),
+                         [&](const char* expr) {
+                             std::stringstream ss;
+                             ss << "Command '" << expr << "' failed\n";
+                             std::string str(256, '\0');
+                             OCL_GUARD(clGetProgramBuildInfo(program, p.device_id,
+                                                             CL_PROGRAM_BUILD_LOG, str.size(),
+                                                             &str[0], nullptr));
+                             ss << str << std::endl;
+                             return ss.str();
+                         });
 
         // create kernel
         for (const auto& name : kernel_names) {

@@ -16,6 +16,10 @@ void ocl_guard(int value, const char* expr) {
              expr + std::string(" == ") + std::to_string(value) + " and != CL_SUCCESS(0)");
     return;
 }
+void ocl_guard_custom(int value, std::string custom_str) {
+    REQUIRE2(value == CL_SUCCESS, custom_str);
+    return;
+}
 #define OCL_GUARD(expr) ocl_guard((expr), #expr)
 #define OCL_GUARD_RET(expr)                                                                        \
     {                                                                                              \
@@ -23,6 +27,8 @@ void ocl_guard(int value, const char* expr) {
         (expr); /* expecting `ret` to be updated here */                                           \
         OCL_GUARD(ret);                                                                            \
     }
+
+#define OCL_GUARD_CUSTOM(expr, custom_call) ocl_guard_custom((expr), (custom_call(#expr)))
 
 #define OCL_MOVE_PTR(to, from)                                                                     \
     { std::swap(to, from); }

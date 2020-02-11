@@ -8,9 +8,8 @@ namespace {
 const std::string program_str_opt(R"(
 __kernel void rgb2gray(__global const uchar* rgb, __global uchar* gray) {
     int i = get_global_id(0);  // pixel index
-    const uchar r = rgb[3*i + 0]; const uchar g = rgb[3*i + 1]; const uchar b = rgb[3*i + 2];
     // formula: 0.3 * r + 0.59 * g + 0.11 * b
-    gray[i] = 0.3 * r + 0.59 * g + 0.11 * b;
+    gray[i] = 0.3 * rgb[3*i + 0] + 0.59 * rgb[3*i + 1] + 0.11 * rgb[3*i + 2];
 }
 
 int fix(int v, int max_v) {
@@ -181,7 +180,7 @@ cv::Mat process_rgb_ocl_opt(cv::Mat rgb, size_t platform_idx = 0, size_t device_
 
     // rgb2gray:
     {
-        size_t work_group_sizes[] = {10};
+        size_t work_group_sizes[] = {30};
         // work items number must be divisible (no remainder) by the size of the work group
         size_t work_items_sizes[] = {
             size_t(std::ceil(double(rgb.total()) / work_group_sizes[0])) * work_group_sizes[0],
@@ -202,9 +201,11 @@ cv::Mat process_rgb_ocl_opt(cv::Mat rgb, size_t platform_idx = 0, size_t device_
         e.run_nd_range(2, work_items_sizes, work_group_sizes, 1);
     }
 
-    // read output back into this process' memory
+#ifndef NO_MAP_BUFFER
+    // // read output back into this process' memory
     OCL_GUARD_RET(clEnqueueMapBuffer(e.queue, outmem, CL_TRUE, CL_MAP_READ, 0,
                                      out.total() * out.elemSize(), 0, nullptr, nullptr, &ret));
+#endif
 
     // release memory objects
     OCL_GUARD(clReleaseMemObject(outmem));

@@ -134,9 +134,11 @@ cv::Mat moving_avg_ocl(cv::Mat gray, size_t platform_idx = 0, size_t device_idx 
         e.run_nd_range(2, work_items_sizes, work_group_sizes, 0);
     }
 
+#ifndef NO_MAP_BUFFER
     // read output back into this process' memory
     OCL_GUARD_RET(clEnqueueMapBuffer(e.queue, outmem, CL_TRUE, CL_MAP_READ, 0,
                                      out.total() * out.elemSize(), 0, nullptr, nullptr, &ret));
+#endif
 
     // release memory objects
     OCL_GUARD(clReleaseMemObject(outmem));
