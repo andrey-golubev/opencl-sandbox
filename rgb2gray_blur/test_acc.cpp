@@ -38,26 +38,6 @@ std::map<std::string, void (*)(int, int)> ALL_TESTS = {};
     ALL_TESTS["TEST_" #suffix] = [](int platform_id, int device_id) /* test body starts here */
 
 void declare_tests() {
-    TEST(RGB2GRAY) {
-        cv::Mat rgb(cv::Size(12, 12), CV_8UC3);
-        cv::randu(rgb, cv::Scalar(0, 0, 0), cv::Scalar(255, 255, 255));
-
-        cv::Mat cpp = rgb2gray_cpp(rgb);
-        cv::Mat ocl = rgb2gray_ocl(rgb, platform_id, device_id);
-
-        REQUIRE(equal_with_tolerance(cpp, ocl, 2));
-    };
-
-    TEST(MOVING_AVG) {
-        cv::Mat gray(cv::Size(12, 12), CV_8UC1);
-        cv::randu(gray, cv::Scalar(0), cv::Scalar(255));
-
-        cv::Mat cpp = moving_avg_cpp(gray);
-        cv::Mat ocl = moving_avg_ocl(gray, platform_id, device_id);
-
-        REQUIRE(equal_with_tolerance(cpp, ocl, 2));
-    };
-
     TEST(FULL_PIPELINE) {
         cv::Size test_sizes[] = {
             cv::Size(1920, 1080), cv::Size(640, 480), cv::Size(189, 279),
@@ -72,26 +52,6 @@ void declare_tests() {
 
             REQUIRE(equal_with_tolerance(cpp, ocl, 2));
         }
-    };
-
-    TEST(RGB2GRAY_OPT_OCL) {
-        cv::Mat rgb(cv::Size(12, 12), CV_8UC3);
-        cv::randu(rgb, cv::Scalar(0, 0, 0), cv::Scalar(255, 255, 255));
-
-        cv::Mat cpp = rgb2gray_cpp(rgb);
-        cv::Mat ocl = rgb2gray_ocl_opt(rgb, platform_id, device_id);
-
-        REQUIRE(equal_with_tolerance(cpp, ocl, 2));
-    };
-
-    TEST(MOVING_AVG_OPT_OCL) {
-        cv::Mat gray(cv::Size(12, 12), CV_8UC1);
-        cv::randu(gray, cv::Scalar(0), cv::Scalar(255));
-
-        cv::Mat cpp = moving_avg_cpp(gray);
-        cv::Mat ocl = moving_avg_ocl_opt(gray, platform_id, device_id);
-
-        REQUIRE(equal_with_tolerance(cpp, ocl, 2));
     };
 
     TEST(FULL_PIPELINE_OPT_OCL) {
