@@ -7,7 +7,6 @@
 #include <opencv2/imgproc.hpp>
 
 // OpenCL image processing:
-#define NO_MAP_BUFFER
 #include "rgb2gray_blur_ocl_inl.hpp"
 #include "rgb2gray_blur_ocl_opt_inl.hpp"
 
@@ -19,7 +18,7 @@ void print_usage(const char* program_name) {
     PRINTLN("Usage: " + std::string(program_name) + " [CL_PLATFORM_ID CL_DEVICE_ID]");
 }
 
-constexpr const size_t ITERS = 10000;
+constexpr const size_t ITERS = 400;
 }  // namespace
 
 int main(int argc, char* argv[]) {
@@ -44,13 +43,13 @@ int main(int argc, char* argv[]) {
     cv::randu(rgb, cv::Scalar(0, 0, 0), cv::Scalar(255, 255, 255));
 
     // Run OpenCL baseline:
-    // auto baseline_time = measure(ITERS, [&]() { process_rgb_ocl(rgb, platform_id, device_id); });
+    auto baseline_time = measure(ITERS, [&]() { process_rgb_ocl(rgb, platform_id, device_id); });
 
     auto optimized_time =
         measure(ITERS, [&]() { process_rgb_ocl_opt(rgb, platform_id, device_id); });
 
-    // PRINTLN("BASELINE: " + std::to_string(baseline_time / ITERS));
-    PRINTLN("OPTIMIZED: " + std::to_string(optimized_time / ITERS));
+    PRINTLN("BASELINE: " + std::to_string(baseline_time / ITERS) + " usec");
+    PRINTLN("OPTIMIZED: " + std::to_string(optimized_time / ITERS) + " usec");
 
     return 0;
 }
