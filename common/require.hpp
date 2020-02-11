@@ -11,5 +11,11 @@
 #define REQUIRE2(expr, expr_str)                                                                   \
     do {                                                                                           \
         if (!(expr))                                                                               \
-            throw std::runtime_error(expr_str);                                                    \
+            throw std::runtime_error((expr_str));                                                  \
+    } while (0)
+
+#define REQUIRE_CUSTOM(expr, expr_str, handle_error)                                               \
+    do {                                                                                           \
+        if (!(expr))                                                                               \
+            throw std::runtime_error((handle_error((expr_str))));                                  \
     } while (0)

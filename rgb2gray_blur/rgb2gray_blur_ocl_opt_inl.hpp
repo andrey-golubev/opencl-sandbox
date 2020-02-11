@@ -38,14 +38,14 @@ __kernel void moving_avg5x5(__global const uchar* in, __global uchar* out, int r
     const int k_size = 5;
 
     // prepare lines in advance
-    __global const uchar* in_lines[k_size] = {};
+    __global const uchar* in_lines[5] = {};  // 5 - k_size
     for (int i = 0; i < k_size; ++i) {
         const int ii = fix(idx_i + i - 2, rows - 1);  // 2 - shift for pixel to be in kernel middle
         in_lines[i] = in + ii * cols;
     }
 
     // prepare column indices in advance
-    int js[k_size] = {};
+    int js[5] = {};  // 5 - k_size
     for (int j = 0; j < k_size; ++j) {
         js[j] = fix(idx_j + j - 2, cols - 1);  // 2 - shift for pixel to be in kernel middle
     }

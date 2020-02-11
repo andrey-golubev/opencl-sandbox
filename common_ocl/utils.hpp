@@ -16,8 +16,9 @@ void ocl_guard(int value, const char* expr) {
              expr + std::string(" == ") + std::to_string(value) + " and != CL_SUCCESS(0)");
     return;
 }
-void ocl_guard_custom(int value, std::string custom_str) {
-    REQUIRE2(value == CL_SUCCESS, custom_str);
+template<typename ErrorHandler>
+void ocl_guard_custom(int value, const char* expr, ErrorHandler handle) {
+    REQUIRE_CUSTOM(value == CL_SUCCESS, expr, handle);
     return;
 }
 #define OCL_GUARD(expr) ocl_guard((expr), #expr)
@@ -28,7 +29,7 @@ void ocl_guard_custom(int value, std::string custom_str) {
         OCL_GUARD(ret);                                                                            \
     }
 
-#define OCL_GUARD_CUSTOM(expr, custom_call) ocl_guard_custom((expr), (custom_call(#expr)))
+#define OCL_GUARD_CUSTOM(expr, custom_call) ocl_guard_custom((expr), #expr, custom_call)
 
 #define OCL_MOVE_PTR(to, from)                                                                     \
     { std::swap(to, from); }
@@ -89,22 +90,23 @@ void print_cl_info() {
         print_info_impl({
             {extra + "Name: ",
              [&](std::string& str) {
-                 return clGetPlatformInfo(platform_id, CL_PLATFORM_NAME, str.size(), &str[0], NULL);
+                 return clGetPlatformInfo(platform_id, CL_PLATFORM_NAME, str.size(), &str[0],
+                                          nullptr);
              }},
             {extra + "Version: ",
              [&](std::string& str) {
                  return clGetPlatformInfo(platform_id, CL_PLATFORM_VERSION, str.size(), &str[0],
-                                          NULL);
+                                          nullptr);
              }},
             {extra + "Vendor: ",
              [&](std::string& str) {
                  return clGetPlatformInfo(platform_id, CL_PLATFORM_VENDOR, str.size(), &str[0],
-                                          NULL);
+                                          nullptr);
              }},
             {extra + "Profile: ",
              [&](std::string& str) {
                  return clGetPlatformInfo(platform_id, CL_PLATFORM_PROFILE, str.size(), &str[0],
-                                          NULL);
+                                          nullptr);
              }},
         });
 
@@ -126,24 +128,25 @@ void print_cl_info() {
             print_info_impl({
                 {extra + "Name: ",
                  [&](std::string& str) {
-                     return clGetDeviceInfo(device_id, CL_DEVICE_NAME, str.size(), &str[0], NULL);
+                     return clGetDeviceInfo(device_id, CL_DEVICE_NAME, str.size(), &str[0],
+                                            nullptr);
                  }},
                 {extra + "Version: ",
                  [&](std::string& str) {
                      return clGetDeviceInfo(device_id, CL_DEVICE_VERSION, str.size(), &str[0],
-                                            NULL);
+                                            nullptr);
                  }},
                 {extra + "Type: ",
                  [&](std::string& str) {
                      auto ret =
-                         clGetDeviceInfo(device_id, CL_DEVICE_TYPE, sizeof(type), &type, NULL);
+                         clGetDeviceInfo(device_id, CL_DEVICE_TYPE, sizeof(type), &type, nullptr);
                      str = type2str(type);
                      return ret;
                  }},
                 {extra + "Profile: ",
                  [&](std::string& str) {
                      return clGetDeviceInfo(device_id, CL_DEVICE_PROFILE, str.size(), &str[0],
-                                            NULL);
+                                            nullptr);
                  }},
             });
         }
