@@ -34,7 +34,7 @@ std::pair<std::string, std::string> check_run(F f, int platform_id, int device_i
     return {"OK", std::to_string(double(res) / 1000) + " msec"};
 }
 
-constexpr const std::size_t ITERS = 3000;
+constexpr const std::size_t ITERS = 1000;
 
 std::map<std::string, std::uint64_t (*)(int, int, cv::Size)> ALL_PERF_TESTS = {};
 #define PERF(suffix)                                                                               \
