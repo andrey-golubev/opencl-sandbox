@@ -60,10 +60,8 @@ void declare_tests() {
 
     TEST(FULL_PIPELINE) {
         cv::Size test_sizes[] = {
-            cv::Size(1920, 1080),
-            cv::Size(640, 480),
-            cv::Size(189, 279),
-            cv::Size(12, 12),
+            cv::Size(1920, 1080), cv::Size(640, 480), cv::Size(189, 279),
+            cv::Size(12, 12),     cv::Size(5, 5),
         };
         for (const auto& size : test_sizes) {
             cv::Mat rgb(size, CV_8UC3);
@@ -98,10 +96,8 @@ void declare_tests() {
 
     TEST(FULL_PIPELINE_OPT_OCL) {
         cv::Size test_sizes[] = {
-            cv::Size(1920, 1080),
-            cv::Size(640, 480),
-            cv::Size(189, 279),
-            cv::Size(12, 12),
+            cv::Size(1920, 1080), cv::Size(640, 480), cv::Size(189, 279),
+            cv::Size(12, 12),     cv::Size(5, 5),
         };
         for (const auto& size : test_sizes) {
             cv::Mat rgb(size, CV_8UC3);

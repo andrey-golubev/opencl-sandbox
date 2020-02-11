@@ -22,14 +22,11 @@ int fix(int v, int max_v) {
     return v;
 }
 
-bool out_of_bounds(int x, int l, int r) {
-    if (x < l || x > r) {
-        return true;
-    }
-    return false;
+inline bool out_of_bounds(int x, int l, int r) {
+    return (x < l || x > r);
 }
 
-__kernel void moving_avg5x5(__global const uchar* gray, __global uchar* out, int rows, int cols) {
+__kernel void moving_avg5x5(__global const uchar* in, __global uchar* out, int rows, int cols) {
     const int idx_i = get_global_id(0);  // pixel index for row
     const int idx_j = get_global_id(1);  // pixel index for col
 
@@ -39,19 +36,29 @@ __kernel void moving_avg5x5(__global const uchar* gray, __global uchar* out, int
     }
 
     const int k_size = 5;
-    const int center_shift = (k_size - 1) / 2;  // int(5 / 2)
 
-    int sum = 0;
+    // prepare lines in advance
+    __global const uchar* in_lines[k_size] = {};
     for (int i = 0; i < k_size; ++i) {
-        const int ii = fix(idx_i + i - center_shift, rows - 1);
+        const int ii = fix(idx_i + i - 2, rows - 1);  // 2 - shift for pixel to be in kernel middle
+        in_lines[i] = in + ii * cols;
+    }
+
+    // prepare column indices in advance
+    int js[k_size] = {};
+    for (int j = 0; j < k_size; ++j) {
+        js[j] = fix(idx_j + j - 2, cols - 1);  // 2 - shift for pixel to be in kernel middle
+    }
+
+    // main loop
+    uint sum = 0;
+    for (int i = 0; i < k_size; ++i) {
         for (int j = 0; j < k_size; ++j) {
-            const int jj = fix(idx_j + j - center_shift, cols - 1);
-            sum += gray[ii * cols + jj];
+            sum += in_lines[ i ][ js[j] ];
         }
     }
 
-    double dsum = sum;
-    out[idx_i * cols + idx_j] = round(dsum / (k_size * k_size));
+    out[idx_i * cols + idx_j] = round(0.04 * sum);  // 0.04 = 1/25
 }
 
 )");
@@ -180,7 +187,7 @@ cv::Mat process_rgb_ocl_opt(cv::Mat rgb, size_t platform_idx = 0, size_t device_
 
     // rgb2gray:
     {
-        size_t work_group_sizes[] = {30};
+        size_t work_group_sizes[] = {32};
         // work items number must be divisible (no remainder) by the size of the work group
         size_t work_items_sizes[] = {
             size_t(std::ceil(double(rgb.total()) / work_group_sizes[0])) * work_group_sizes[0],
@@ -191,7 +198,7 @@ cv::Mat process_rgb_ocl_opt(cv::Mat rgb, size_t platform_idx = 0, size_t device_
 
     // moving_avg5x5:
     {
-        size_t work_group_sizes[] = {3, 3};
+        size_t work_group_sizes[] = {1, 32};
         // work items number must be divisible (no remainder) by the size of the work group
         size_t work_items_sizes[] = {
             size_t(std::ceil(double(rgb.rows) / work_group_sizes[0])) * work_group_sizes[0],
