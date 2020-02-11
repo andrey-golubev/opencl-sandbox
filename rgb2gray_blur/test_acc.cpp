@@ -37,13 +37,14 @@ std::map<std::string, void (*)(int, int)> ALL_TESTS = {};
 #define TEST(suffix)                                                                               \
     ALL_TESTS["TEST_" #suffix] = [](int platform_id, int device_id) /* test body starts here */
 
+const cv::Size TEST_SIZES[] = {
+    cv::Size(4096, 2160), cv::Size(1920, 1080), cv::Size(640, 480),
+    cv::Size(189, 279),   cv::Size(12, 12),     cv::Size(5, 5),
+};
+
 void declare_tests() {
     TEST(FULL_PIPELINE) {
-        cv::Size test_sizes[] = {
-            cv::Size(1920, 1080), cv::Size(640, 480), cv::Size(189, 279),
-            cv::Size(12, 12),     cv::Size(5, 5),
-        };
-        for (const auto& size : test_sizes) {
+        for (const auto& size : TEST_SIZES) {
             cv::Mat rgb(size, CV_8UC3);
             cv::randu(rgb, cv::Scalar(0, 0, 0), cv::Scalar(255, 255, 255));
 
@@ -55,11 +56,7 @@ void declare_tests() {
     };
 
     TEST(FULL_PIPELINE_OPT_OCL) {
-        cv::Size test_sizes[] = {
-            cv::Size(1920, 1080), cv::Size(640, 480), cv::Size(189, 279),
-            cv::Size(12, 12),     cv::Size(5, 5),
-        };
-        for (const auto& size : test_sizes) {
+        for (const auto& size : TEST_SIZES) {
             cv::Mat rgb(size, CV_8UC3);
             cv::randu(rgb, cv::Scalar(0, 0, 0), cv::Scalar(255, 255, 255));
 

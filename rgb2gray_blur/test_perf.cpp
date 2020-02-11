@@ -21,7 +21,7 @@ void print_usage(const char* program_name) {
 }
 template<typename F>
 std::pair<std::string, std::string> check_run(F f, int platform_id, int device_id, cv::Size size) {
-    int64_t res = 0;
+    std::uint64_t res = 0;  // in microseconds
     try {
         res = f(platform_id, device_id, size);
     } catch (const std::exception& e) {
@@ -31,10 +31,10 @@ std::pair<std::string, std::string> check_run(F f, int platform_id, int device_i
         PRINTLN("UNKNOWN ERROR HAPPENED");
         return {"FAIL", "0"};
     }
-    return {"OK", std::to_string(res) + " microsec"};
+    return {"OK", std::to_string(double(res) / 1000) + " msec"};
 }
 
-constexpr const std::size_t ITERS = 1000;
+constexpr const std::size_t ITERS = 5000;
 
 std::map<std::string, std::uint64_t (*)(int, int, cv::Size)> ALL_PERF_TESTS = {};
 #define PERF(suffix)                                                                               \
@@ -88,10 +88,7 @@ int main(int argc, char* argv[]) {
 
     declare_tests();
 
-    cv::Size sizes[] = {
-        cv::Size(1920, 1080),
-        cv::Size(640, 480),
-    };
+    cv::Size sizes[] = {cv::Size(1920, 1080), cv::Size(640, 480), cv::Size(4096, 2160)};
     for (const auto& it : ALL_PERF_TESTS) {
         const auto& name = it.first;
         const auto& perf_test = it.second;

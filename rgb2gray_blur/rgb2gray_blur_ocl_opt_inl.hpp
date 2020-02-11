@@ -99,7 +99,7 @@ cv::Mat process_rgb_ocl_opt(cv::Mat rgb, size_t platform_idx = 0, size_t device_
 
     // rgb2gray:
     {
-        size_t work_group_sizes[] = {32};
+        size_t work_group_sizes[] = {256};
         // work items number must be divisible (no remainder) by the size of the work group
         size_t work_items_sizes[] = {
             size_t(std::ceil(double(rgb.total()) / work_group_sizes[0])) * work_group_sizes[0],
@@ -110,7 +110,7 @@ cv::Mat process_rgb_ocl_opt(cv::Mat rgb, size_t platform_idx = 0, size_t device_
 
     // moving_avg5x5:
     {
-        size_t work_group_sizes[] = {1, 32};
+        size_t work_group_sizes[] = {1, 256};
         // work items number must be divisible (no remainder) by the size of the work group
         size_t work_items_sizes[] = {
             size_t(std::ceil(double(rgb.rows) / work_group_sizes[0])) * work_group_sizes[0],

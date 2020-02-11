@@ -48,8 +48,8 @@ int main(int argc, char* argv[]) {
     auto optimized_time =
         measure(ITERS, [&]() { process_rgb_ocl_opt(rgb, platform_id, device_id); });
 
-    PRINTLN("BASELINE: " + std::to_string(baseline_time / ITERS) + " usec");
-    PRINTLN("OPTIMIZED: " + std::to_string(optimized_time / ITERS) + " usec");
+    PRINTLN("BASELINE: " + std::to_string(double(baseline_time) / ITERS / 1000) + " msec");
+    PRINTLN("OPTIMIZED: " + std::to_string(double(optimized_time) / ITERS / 1000) + " msec");
 
     return 0;
 }
