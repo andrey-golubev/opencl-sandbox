@@ -6,15 +6,10 @@
 #include <opencv2/imgcodecs.hpp>
 #include <opencv2/imgproc.hpp>
 
-// CPP image processing:
-#include "rgb2gray_blur_cpp_inl.hpp"
-// OpenCL image processing:
-#include "rgb2gray_blur_ocl_inl.hpp"
-// OpenCL optimized image processing:
-#include "rgb2gray_blur_ocl_opt_inl.hpp"
+// CPP zncc:
+#include "zncc_cpp_inl.hpp"
 
 #include "common/utils.hpp"
-#include "equal.hpp"
 
 namespace {
 void print_usage(const char* program_name) {
@@ -43,27 +38,19 @@ const cv::Size TEST_SIZES[] = {
 };
 
 void declare_tests() {
-    TEST(FULL_PIPELINE) {
+    TEST(BOX_BLUR_CPP) {
         for (const auto& size : TEST_SIZES) {
-            cv::Mat rgb(size, CV_8UC3);
-            cv::randu(rgb, cv::Scalar(0, 0, 0), cv::Scalar(255, 255, 255));
+            cv::Mat in(size, CV_8UC1);
+            cv::randu(in, cv::Scalar(0), cv::Scalar(255));
 
-            cv::Mat cpp = process_rgb_cpp(rgb);
-            cv::Mat ocl = process_rgb_ocl(rgb, platform_id, device_id);
+            cv::Mat ocv;
+            cv::Mat cpp = cv::Mat::zeros(in.size(), in.type());
 
-            REQUIRE(equal_with_tolerance(cpp, ocl, 2));
-        }
-    };
-
-    TEST(FULL_PIPELINE_OPT) {
-        for (const auto& size : TEST_SIZES) {
-            cv::Mat rgb(size, CV_8UC3);
-            cv::randu(rgb, cv::Scalar(0, 0, 0), cv::Scalar(255, 255, 255));
-
-            cv::Mat cpp = process_rgb_cpp(rgb);
-            cv::Mat ocl = process_rgb_ocl_opt(rgb, platform_id, device_id);
-
-            REQUIRE(equal_with_tolerance(cpp, ocl, 2));
+            for (int k_size : {5, 9}) {
+                cv::boxFilter(in, ocv, -1, cv::Size(k_size, k_size));
+                box_blur(in.data, cpp.data, in.rows, in.cols, k_size);
+                REQUIRE(cv::countNonZero(ocv != cpp) == 0);
+            }
         }
     };
 }
