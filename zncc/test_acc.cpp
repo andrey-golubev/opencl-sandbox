@@ -55,6 +55,10 @@ void declare_tests() {
     };
 }
 
+bool test_disabled(const std::string& test_name) {
+    return std::string::npos != test_name.find("DISABLED");
+}
+
 }  // namespace
 
 int main(int argc, char* argv[]) {
@@ -78,6 +82,10 @@ int main(int argc, char* argv[]) {
 
     for (const auto& it : ALL_TESTS) {
         const auto& name = it.first;
+        if (test_disabled(name)) {
+            continue;
+        }
+
         const auto& test = it.second;
         PRINTLN("RUN [" + name + "]");
         auto res = check_run(test, platform_id, device_id);
