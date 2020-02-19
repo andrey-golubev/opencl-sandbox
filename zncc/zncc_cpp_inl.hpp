@@ -42,14 +42,8 @@ cv::Mat cross_check_disparity(const cv::Mat& l2r, const cv::Mat& r2l);
 // fills occlusions in disparity map inplace
 void fill_occlusions_disparity(cv::Mat& mat);
 
-cv::Mat stereo_compute_disparity(const cv::Mat& left, const cv::Mat& right, Range1d disparity) {
-    // sanity checks:
-    REQUIRE(left.type() == CV_8UC1);
-    REQUIRE(left.type() == right.type());
-    REQUIRE(left.dims == 2);
-    REQUIRE(left.rows == right.rows);
-    REQUIRE(left.cols == right.cols);
-
+std::pair<cv::Mat, cv::Mat>
+stereo_compute_disparities_impl(const cv::Mat& left, const cv::Mat& right, Range1d disparity) {
     const int window_size = 5;  // TODO: this parameter must be optimized
 
     // 1. find mean images:
@@ -63,7 +57,23 @@ cv::Mat stereo_compute_disparity(const cv::Mat& left, const cv::Mat& right, Rang
     auto map_l2r = make_disparity_map(left, left_mean, right, right_mean, window_size, disparity);
     auto map_r2l = make_disparity_map(right, right_mean, left, left_mean, window_size, disparity);
 
-    // 3. post process:
+    return {map_l2r, map_r2l};
+}
+
+cv::Mat stereo_compute_disparity(const cv::Mat& left, const cv::Mat& right, int disparity) {
+    // sanity checks:
+    REQUIRE(left.type() == CV_8UC1);
+    REQUIRE(left.type() == right.type());
+    REQUIRE(left.dims == 2);
+    REQUIRE(left.rows == right.rows);
+    REQUIRE(left.cols == right.cols);
+
+    // 1. find disparity maps (L2R and R2L):
+    cv::Mat map_l2r, map_r2l;
+    std::tie(map_l2r, map_r2l) =
+        stereo_compute_disparities_impl(left, right, {-disparity, disparity});
+
+    // 2. post process:
     auto final = cross_check_disparity(map_l2r, map_r2l);
     fill_occlusions_disparity(final);
 
@@ -75,7 +85,7 @@ cv::Mat make_disparity_map(const cv::Mat& left, const cv::Mat& left_mean, const 
                            const cv::Mat& right_mean, int window_size, Range1d disparity) {
     const int rows = left.rows, cols = left.cols;
 
-    cv::Mat disparity_map = cv::Mat::zeros(left.size(), CV_32SC1);
+    cv::Mat disparity_map = cv::Mat::zeros(left.size(), CV_32FC1);
 
     for (int idx_i = 0; idx_i < rows; ++idx_i) {
         for (int idx_j = 0; idx_j < cols; ++idx_j) {
@@ -93,7 +103,7 @@ cv::Mat make_disparity_map(const cv::Mat& left, const cv::Mat& left_mean, const 
                 }
             }
 
-            disparity_map.at<int>(idx_i, idx_j) = best_disparity;
+            disparity_map.at<float>(idx_i, idx_j) = best_disparity;
         }
     }
 
