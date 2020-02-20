@@ -17,12 +17,6 @@ int fix(int v, int max_v) {
     }
     return v;
 }
-
-// range of format [first, last)
-struct Range1d {
-    int first = 0;
-    int last = 0;
-};
 }  // namespace
 
 // applies box blur filter
@@ -34,7 +28,7 @@ double zncc(const uchar* left, const uchar* left_mean, const uchar* right, const
 
 // creates disparity map
 cv::Mat make_disparity_map(const cv::Mat& left, const cv::Mat& left_mean, const cv::Mat& right,
-                           const cv::Mat& right_mean, int window_size, Range1d disparity);
+                           const cv::Mat& right_mean, int window_size, int disparity);
 
 // cross-checks 2 disparity maps
 cv::Mat cross_check_disparity(const cv::Mat& l2r, const cv::Mat& r2l);
@@ -42,8 +36,8 @@ cv::Mat cross_check_disparity(const cv::Mat& l2r, const cv::Mat& r2l);
 // fills occlusions in disparity map inplace
 void fill_occlusions_disparity(cv::Mat& mat);
 
-std::pair<cv::Mat, cv::Mat>
-stereo_compute_disparities_impl(const cv::Mat& left, const cv::Mat& right, Range1d disparity) {
+std::pair<cv::Mat, cv::Mat> stereo_compute_disparities_impl(const cv::Mat& left,
+                                                            const cv::Mat& right, int disparity) {
     const int window_size = 5;  // TODO: this parameter must be optimized
 
     // 1. find mean images:
@@ -70,8 +64,7 @@ cv::Mat stereo_compute_disparity(const cv::Mat& left, const cv::Mat& right, int 
 
     // 1. find disparity maps (L2R and R2L):
     cv::Mat map_l2r, map_r2l;
-    std::tie(map_l2r, map_r2l) =
-        stereo_compute_disparities_impl(left, right, {-disparity, disparity});
+    std::tie(map_l2r, map_r2l) = stereo_compute_disparities_impl(left, right, disparity);
 
     // 2. post process:
     auto final = cross_check_disparity(map_l2r, map_r2l);
@@ -82,7 +75,7 @@ cv::Mat stereo_compute_disparity(const cv::Mat& left, const cv::Mat& right, int 
 
 // makes disparity map
 cv::Mat make_disparity_map(const cv::Mat& left, const cv::Mat& left_mean, const cv::Mat& right,
-                           const cv::Mat& right_mean, int window_size, Range1d disparity) {
+                           const cv::Mat& right_mean, int window_size, int disparity) {
     const int rows = left.rows, cols = left.cols;
 
     cv::Mat disparity_map = cv::Mat::zeros(left.size(), CV_32FC1);
@@ -91,10 +84,10 @@ cv::Mat make_disparity_map(const cv::Mat& left, const cv::Mat& left_mean, const 
         for (int idx_j = 0; idx_j < cols; ++idx_j) {
 
             // find max zncc and corresponding disparity for current pixel:
-            double max_zncc = -2.0;               // zncc in range [-1, 1]
-            int best_disparity = disparity.last;  // d in range [first, last)
+            double max_zncc = -2.0;  // zncc in range [-1, 1]
+            int best_disparity = 0;  // d in range [-disparity, disparity], use 0 for occlusion fill
 
-            for (int d = disparity.first; d < disparity.last; ++d) {
+            for (int d = -disparity; d <= disparity; ++d) {
                 double v = zncc(left.data, left_mean.data, right.data, right_mean.data, rows, cols,
                                 window_size, idx_i, idx_j, d);
                 if (max_zncc < v) {

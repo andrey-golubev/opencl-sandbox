@@ -9,7 +9,7 @@
 #include <opencv2/highgui.hpp>
 
 // CPP zncc:
-#include "zncc_cpp_inl.hpp"
+#include "stereo_disparity_cpp_inl.hpp"
 
 #include "common/utils.hpp"
 
@@ -40,6 +40,12 @@ const cv::Size TEST_SIZES[] = {
     cv::Size(189, 279),   cv::Size(12, 12),     cv::Size(5, 5),
 };
 
+cv::Mat test_make_mean(const cv::Mat& in, int k_size) {
+    cv::Mat out;
+    cv::boxFilter(in, out, -1, cv::Size(k_size, k_size));
+    return out;
+}
+
 std::string TEST_DATA_FOLDER = "";
 
 void declare_tests() {
@@ -58,22 +64,25 @@ void declare_tests() {
             }
         }
     };
-    TEST(DISPARITY_BACKPACK) {
+    TEST(DISABLED_DISPARITY_BACKPACK) {
         std::string backpack_folder = TEST_DATA_FOLDER + "/stereo/backpack/";
         cv::Mat left_img = cv::imread(backpack_folder + "im0.png");
         cv::Mat right_img = cv::imread(backpack_folder + "im1.png");
-        cv::Mat disp_l2r = cv::imread(backpack_folder + "disp0.pfm", cv::IMREAD_ANYDEPTH);
-        cv::Mat disp_r2l = cv::imread(backpack_folder + "disp1.pfm", cv::IMREAD_ANYDEPTH);
+        cv::Mat disp_l2r = cv::imread(backpack_folder + "disp0.pfm", cv::IMREAD_COLOR);
+        cv::Mat disp_r2l = cv::imread(backpack_folder + "disp1.pfm", cv::IMREAD_COLOR);
 
-        cv::resize(left_img, left_img, cv::Size(640, 480));
-        cv::resize(right_img, right_img, cv::Size(640, 480));
+        cv::Mat left, right;
+        cv::cvtColor(left_img, left, cv::COLOR_BGR2GRAY);
+        cv::cvtColor(right_img, right, cv::COLOR_BGR2GRAY);
+
+        cv::resize(left, left, cv::Size(640, 480));
+        cv::resize(right, right, cv::Size(640, 480));
 
         cv::resize(disp_l2r, disp_l2r, cv::Size(640, 480));
         cv::resize(disp_r2l, disp_r2l, cv::Size(640, 480));
 
         cv::Mat cpp_l2r, cpp_r2l;
-        std::tie(cpp_l2r, cpp_r2l) =
-            stereo_compute_disparities_impl(left_img, right_img, {-10, 10});
+        std::tie(cpp_l2r, cpp_r2l) = stereo_compute_disparities_impl(left, right, 10);
 
         cv::imshow("Computed disparity L2R", cpp_l2r);
         cv::imshow("Computed disparity R2L", cpp_r2l);
@@ -83,6 +92,37 @@ void declare_tests() {
 
         // REQUIRE(cv::countNonZero(disp_l2r != cpp_l2r) == 0);
         // REQUIRE(cv::countNonZero(disp_r2l != cpp_r2l) == 0);
+    };
+    TEST(DISPARITY_MAP_L2R) {
+        std::string backpack_folder = TEST_DATA_FOLDER + "/stereo/backpack/";
+        cv::Mat left_img = cv::imread(backpack_folder + "im0.png");
+        cv::Mat right_img = cv::imread(backpack_folder + "im1.png");
+        cv::Mat disp_l2r = cv::imread(backpack_folder + "disp0.pfm");
+
+        cv::Mat left, right;
+        cv::cvtColor(left_img, left, cv::COLOR_BGR2GRAY);
+        cv::cvtColor(right_img, right, cv::COLOR_BGR2GRAY);
+
+        cv::resize(left, left, cv::Size(640, 480));
+        cv::resize(right, right, cv::Size(640, 480));
+
+        // test code:
+        cv::Mat cpp_l2r;
+        {
+            int window_size = 5;
+            cv::Mat left_mean = test_make_mean(left, window_size);
+            cv::Mat right_mean = test_make_mean(right, window_size);
+            cpp_l2r = make_disparity_map(left, left_mean, right, right_mean, window_size, 30);
+        }
+
+        PRINTLN(disp_l2r.channels());
+
+        cv::resize(disp_l2r, disp_l2r, cv::Size(640, 480));
+        cv::imshow("Computed disparity L2R", cpp_l2r);
+        cv::imshow("GT disparity L2R", disp_l2r);
+        cv::waitKey();
+
+        REQUIRE(cv::countNonZero(disp_l2r != cpp_l2r) == 0);
     };
 }
 
