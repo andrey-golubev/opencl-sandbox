@@ -4,6 +4,7 @@
 #include <utility>
 
 #include <opencv2/core.hpp>
+#include <opencv2/core/hal/intrin.hpp>
 
 #include "common/require.hpp"
 
@@ -31,14 +32,15 @@ cv::Mat make_disparity_map(const cv::Mat& left, const cv::Mat& left_mean, const 
                            const cv::Mat& right_mean, int window_size, int disparity);
 
 // cross-checks 2 disparity maps
-cv::Mat cross_check_disparity(const cv::Mat& l2r, const cv::Mat& r2l);
+cv::Mat cross_check_disparity(const cv::Mat& l2r, cv::Mat& r2l);
 
 // fills occlusions in disparity map inplace
-void fill_occlusions_disparity(cv::Mat& mat);
+cv::Mat fill_occlusions_disparity(const cv::Mat& mat);
 
 std::pair<cv::Mat, cv::Mat> stereo_compute_disparities_impl(const cv::Mat& left,
-                                                            const cv::Mat& right, int disparity) {
-    const int window_size = 5;  // TODO: this parameter must be optimized
+                                                            const cv::Mat& right, int window_size,
+                                                            int disparity) {
+    // const int window_size = 5;  // TODO: this parameter must be optimized
 
     // 1. find mean images:
     cv::Mat left_mean = cv::Mat::zeros(left.size(), left.type());
@@ -54,7 +56,8 @@ std::pair<cv::Mat, cv::Mat> stereo_compute_disparities_impl(const cv::Mat& left,
     return {map_l2r, map_r2l};
 }
 
-cv::Mat stereo_compute_disparity(const cv::Mat& left, const cv::Mat& right, int disparity) {
+cv::Mat stereo_compute_disparity(const cv::Mat& left, const cv::Mat& right, int window_size,
+                                 int disparity) {
     // sanity checks:
     REQUIRE(left.type() == CV_8UC1);
     REQUIRE(left.type() == right.type());
@@ -64,30 +67,29 @@ cv::Mat stereo_compute_disparity(const cv::Mat& left, const cv::Mat& right, int 
 
     // 1. find disparity maps (L2R and R2L):
     cv::Mat map_l2r, map_r2l;
-    std::tie(map_l2r, map_r2l) = stereo_compute_disparities_impl(left, right, disparity);
+    std::tie(map_l2r, map_r2l) =
+        stereo_compute_disparities_impl(left, right, window_size, disparity);
 
     // 2. post process:
-    auto final = cross_check_disparity(map_l2r, map_r2l);
-    fill_occlusions_disparity(final);
-
-    return final;
+    return fill_occlusions_disparity(cross_check_disparity(map_l2r, map_r2l));
 }
 
 // makes disparity map
 cv::Mat make_disparity_map(const cv::Mat& left, const cv::Mat& left_mean, const cv::Mat& right,
                            const cv::Mat& right_mean, int window_size, int disparity) {
+    REQUIRE(disparity <= std::numeric_limits<uchar>::max());
     const int rows = left.rows, cols = left.cols;
 
-    cv::Mat disparity_map = cv::Mat::zeros(left.size(), CV_32FC1);
+    cv::Mat disparity_map = cv::Mat::zeros(left.size(), CV_8UC1);
 
     for (int idx_i = 0; idx_i < rows; ++idx_i) {
         for (int idx_j = 0; idx_j < cols; ++idx_j) {
 
             // find max zncc and corresponding disparity for current pixel:
             double max_zncc = -2.0;  // zncc in range [-1, 1]
-            int best_disparity = 0;  // d in range [-disparity, disparity], use 0 for occlusion fill
+            int best_disparity = 0;  // d in range (0, disparity], use 0 for auto occlusion fill
 
-            for (int d = -disparity; d <= disparity; ++d) {
+            for (int d = 0; d <= disparity; ++d) {
                 double v = zncc(left.data, left_mean.data, right.data, right_mean.data, rows, cols,
                                 window_size, idx_i, idx_j, d);
                 if (max_zncc < v) {
@@ -96,7 +98,7 @@ cv::Mat make_disparity_map(const cv::Mat& left, const cv::Mat& left_mean, const 
                 }
             }
 
-            disparity_map.at<float>(idx_i, idx_j) = best_disparity;
+            disparity_map.at<uchar>(idx_i, idx_j) = best_disparity;
         }
     }
 
@@ -154,19 +156,19 @@ double zncc(const uchar* left, const uchar* left_mean, const uchar* right, const
     return double(sum) / (std_left * std_right);
 }
 
-cv::Mat cross_check_disparity(const cv::Mat& l2r, const cv::Mat& r2l) {
-    const int threshold = 8;  // TODO: this parameter must be optimized
+cv::Mat cross_check_disparity(const cv::Mat& l2r, cv::Mat& r2l) {
+    const int threshold = 10;  // TODO: this parameter must be optimized
     const int rows = l2r.rows, cols = r2l.cols;
 
-    cv::Mat cross_checked = l2r.clone();
+    cv::Mat cross_checked = r2l;
 
     for (int i = 0; i < rows; ++i) {
         for (int j = 0; j < cols; ++j) {
-            int l2r_pixel = l2r.at<int>(i, j);
-            int r2l_pixel = r2l.at<int>(i, j);
+            int l2r_pixel = l2r.at<uchar>(i, j);
+            int r2l_pixel = r2l.at<uchar>(i, j);
 
             if (std::abs(l2r_pixel - r2l_pixel) > threshold) {
-                cross_checked.at<int>(i, j) = std::numeric_limits<int>::max();
+                cross_checked.at<uchar>(i, j) = 0;
             }
         }
     }
@@ -174,4 +176,7 @@ cv::Mat cross_check_disparity(const cv::Mat& l2r, const cv::Mat& r2l) {
     return cross_checked;
 }
 
-void fill_occlusions_disparity(cv::Mat& mat) { return; }
+cv::Mat fill_occlusions_disparity(const cv::Mat& in) {
+    // TODO: implement something
+    return in;
+}

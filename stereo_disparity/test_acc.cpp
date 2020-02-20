@@ -8,8 +8,11 @@
 
 #include <opencv2/highgui.hpp>
 
-// CPP zncc:
+// CPP stereo algo:
 #include "stereo_disparity_cpp_inl.hpp"
+
+// PFM image reader:
+#include "pfm_reader.hpp"
 
 #include "common/utils.hpp"
 
@@ -64,65 +67,58 @@ void declare_tests() {
             }
         }
     };
-    TEST(DISABLED_DISPARITY_BACKPACK) {
-        std::string backpack_folder = TEST_DATA_FOLDER + "/stereo/backpack/";
-        cv::Mat left_img = cv::imread(backpack_folder + "im0.png");
-        cv::Mat right_img = cv::imread(backpack_folder + "im1.png");
-        cv::Mat disp_l2r = cv::imread(backpack_folder + "disp0.pfm", cv::IMREAD_COLOR);
-        cv::Mat disp_r2l = cv::imread(backpack_folder + "disp1.pfm", cv::IMREAD_COLOR);
-
-        cv::Mat left, right;
-        cv::cvtColor(left_img, left, cv::COLOR_BGR2GRAY);
-        cv::cvtColor(right_img, right, cv::COLOR_BGR2GRAY);
-
-        cv::resize(left, left, cv::Size(640, 480));
-        cv::resize(right, right, cv::Size(640, 480));
-
-        cv::resize(disp_l2r, disp_l2r, cv::Size(640, 480));
-        cv::resize(disp_r2l, disp_r2l, cv::Size(640, 480));
-
-        cv::Mat cpp_l2r, cpp_r2l;
-        std::tie(cpp_l2r, cpp_r2l) = stereo_compute_disparities_impl(left, right, 10);
-
-        cv::imshow("Computed disparity L2R", cpp_l2r);
-        cv::imshow("Computed disparity R2L", cpp_r2l);
-        cv::imshow("GT disparity L2R", disp_l2r);
-        cv::imshow("GT disparity R2L", disp_r2l);
-        cv::waitKey();
-
-        // REQUIRE(cv::countNonZero(disp_l2r != cpp_l2r) == 0);
-        // REQUIRE(cv::countNonZero(disp_r2l != cpp_r2l) == 0);
-    };
     TEST(DISPARITY_MAP_L2R) {
         std::string backpack_folder = TEST_DATA_FOLDER + "/stereo/backpack/";
         cv::Mat left_img = cv::imread(backpack_folder + "im0.png");
         cv::Mat right_img = cv::imread(backpack_folder + "im1.png");
-        cv::Mat disp_l2r = cv::imread(backpack_folder + "disp0.pfm");
+
+        std::unique_ptr<float[]> raw_disp;
+        cv::Mat disp_l2r = cv::imread(backpack_folder + "disp0.pfm", cv::IMREAD_LOAD_GDAL);
+        {
+            PFMReader reader;
+            raw_disp = std::move(reader.read<float>(backpack_folder + "disp0.pfm"));
+            REQUIRE(raw_disp != nullptr);
+            disp_l2r = cv::Mat(reader.rows, reader.cols, CV_32FC1, raw_disp.get());
+        }
+
+        cv::Size resize_to(640, 480);
+        cv::Mat disp_l2r_roi = disp_l2r;
+        {
+            cv::resize(left_img, left_img, resize_to);
+            cv::resize(right_img, right_img, resize_to);
+            cv::resize(disp_l2r, disp_l2r, resize_to);
+            disp_l2r.convertTo(disp_l2r_roi, CV_8UC1);
+        }
+
+        // cv::Rect roi(1500, 700, 5, 5);
+        // cv::Mat disp_l2r_roi = disp_l2r(roi);
 
         cv::Mat left, right;
+        // cv::cvtColor(left_img(roi), left, cv::COLOR_BGR2GRAY);
+        // cv::cvtColor(right_img(roi), right, cv::COLOR_BGR2GRAY);
         cv::cvtColor(left_img, left, cv::COLOR_BGR2GRAY);
         cv::cvtColor(right_img, right, cv::COLOR_BGR2GRAY);
-
-        cv::resize(left, left, cv::Size(640, 480));
-        cv::resize(right, right, cv::Size(640, 480));
 
         // test code:
         cv::Mat cpp_l2r;
         {
-            int window_size = 5;
-            cv::Mat left_mean = test_make_mean(left, window_size);
-            cv::Mat right_mean = test_make_mean(right, window_size);
-            cpp_l2r = make_disparity_map(left, left_mean, right, right_mean, window_size, 30);
+            int w_size = 7;
+            (void)w_size;
+            int max_disp = 255;
+            cv::Mat left_mean = test_make_mean(left, w_size);
+            cv::Mat right_mean = test_make_mean(right, w_size);
+            cpp_l2r = make_disparity_map(left, left_mean, right, right_mean, w_size, max_disp);
+            // cpp_l2r = stereo_compute_disparity(left, right, w_size, max_disp);
         }
 
-        PRINTLN(disp_l2r.channels());
+        // PRINTLN(cpp_l2r);
+        // PRINTLN(disp_l2r_roi);
 
-        cv::resize(disp_l2r, disp_l2r, cv::Size(640, 480));
+        cv::imshow("GT disparity L2R", disp_l2r_roi);
         cv::imshow("Computed disparity L2R", cpp_l2r);
-        cv::imshow("GT disparity L2R", disp_l2r);
         cv::waitKey();
 
-        REQUIRE(cv::countNonZero(disp_l2r != cpp_l2r) == 0);
+        // REQUIRE(cv::countNonZero(disp_l2r_roi != cpp_l2r) == 0);
     };
 }
 
