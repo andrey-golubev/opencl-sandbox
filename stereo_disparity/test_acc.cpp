@@ -111,6 +111,7 @@ void declare_tests() {
             cv::Mat right_mean = test_make_mean(right, w_size);
             cpp_l2r = make_disparity_map(left, left_mean, right, right_mean, w_size, max_disp);
             // cpp_l2r = stereo_compute_disparity(left, right, w_size, max_disp);
+            fill_occlusions_disparity(cpp_l2r, w_size);
         }
 
         // PRINTLN(cpp_l2r);
