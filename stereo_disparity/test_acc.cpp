@@ -14,6 +14,7 @@
 // PFM image reader:
 #include "pfm_reader.hpp"
 
+#include "common/threading.hpp"
 #include "common/utils.hpp"
 
 namespace {
@@ -104,6 +105,7 @@ void declare_tests() {
         {
             int w_size = 7;
             (void)w_size;
+
             int max_disp = 255;
             cv::Mat left_mean = test_make_mean(left, w_size);
             cv::Mat right_mean = test_make_mean(right, w_size);

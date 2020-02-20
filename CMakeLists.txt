@@ -21,9 +21,16 @@ if (${WITH_ASAN})
   endif()
 endif (${WITH_ASAN})
 
+option(WITH_THREADING "Enable threaded execution" OFF)
+if (${WITH_THREADING})
+  add_compile_definitions(OMP_THREADING)
+  set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -lgomp")
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fopenmp")
+endif (${WITH_THREADING})
+
 # rules for debug and release
 set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS} -g -O0 ${WARNARGS}")
-set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS} -O2 ${WARNARGS}")
+set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS} -O3 ${WARNARGS}")
 set(CMAKE_CXX_FLAGS_RELWITHDEBINFO "${CMAKE_CXX_FLAGS} -g -O2 ${WARNARGS}")
 
 # include root folder
