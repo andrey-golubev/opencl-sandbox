@@ -3,15 +3,17 @@
 #include <map>
 #include <random>
 
+#include <opencv2/highgui.hpp>
 #include <opencv2/imgcodecs.hpp>
 #include <opencv2/imgproc.hpp>
 
 #include "common/utils.hpp"
 
+#include "stereo_disparity_cpp_inl.hpp"
+
 namespace {
 void print_usage(const char* program_name) {
-    PRINTLN("Usage: " + std::string(program_name) +
-            " IMAGE_LEFT IMAGE_RIGHT [CL_PLATFORM_ID CL_DEVICE_ID]");
+    PRINTLN("Usage: " + std::string(program_name) + " IMAGE_LEFT IMAGE_RIGHT [MAX_DISPARITY]");
 }
 
 template<typename CharT, typename Traits = std::char_traits<CharT>>
@@ -31,31 +33,33 @@ int main(int argc, char* argv[]) {
         print_usage(argv[0]);
         return 1;
     }
-    if (argc != 3 && argc != 5) {
-        print_usage(argv[0]);
-        return 1;
-    }
 
-    int platform_id = 0, device_id = 0;
-    if (argc == 5) {
-        platform_id = std::stoi(argv[2]);
-        device_id = std::stoi(argv[3]);
-    }
-
-    PRINTLN("-----");
-    PRINTLN("For OpenCL: using platform #" + std::to_string(platform_id) + " and device #" +
-            std::to_string(device_id));
-    PRINTLN("-----\n");
-
-    // Read input image:
+    // read input image
     cv::Mat bgr_left = cv::imread(argv[1]);
     cv::Mat bgr_right = cv::imread(argv[2]);
 
-    // Convert to grayscale
+    int max_disparity = 50;
+
+    // read disparity from user input if specified
+    if (argc > 3) {
+        max_disparity = std::stoi(argv[3]);
+    }
+
+    // convert to grayscale
     cv::Mat left;
     cv::Mat right;
     cv::cvtColor(bgr_left, left, cv::COLOR_BGR2GRAY);
     cv::cvtColor(bgr_right, right, cv::COLOR_BGR2GRAY);
+
+    // find disparity
+    cv::Mat map = stereo_cpp_base::stereo_compute_disparity(left, right, max_disparity);
+
+    // show disparity map
+    cv::String win_name("Disparity Map");
+    cv::namedWindow(win_name);
+    cv::imshow(win_name, map);
+    while (cv::waitKey(1) != 27) {
+    };
 
     return 0;
 }
