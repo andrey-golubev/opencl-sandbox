@@ -82,7 +82,7 @@ void declare_tests() {
             disp_l2r = cv::Mat(reader.rows, reader.cols, CV_32FC1, raw_disp.get());
         }
 
-        cv::Size resize_to(640, 480);
+        cv::Size resize_to(left_img.size() / 4);
         cv::Mat disp_l2r_roi = disp_l2r;
         {
             cv::resize(left_img, left_img, resize_to);
@@ -103,19 +103,29 @@ void declare_tests() {
         // test code:
         cv::Mat cpp_l2r;
         {
-            int w_size = 7;
+            int w_size = 5;
             (void)w_size;
 
-            int max_disp = 255;
+            int max_disp = 50;
             cv::Mat left_mean = test_make_mean(left, w_size);
             cv::Mat right_mean = test_make_mean(right, w_size);
+#if 0
             cpp_l2r = make_disparity_map(left, left_mean, right, right_mean, w_size, max_disp);
-            // cpp_l2r = stereo_compute_disparity(left, right, w_size, max_disp);
-            fill_occlusions_disparity(cpp_l2r, w_size);
+            // fill_occlusions_disparity(cpp_l2r, w_size);
+#else
+            cv::Mat cpp_l2r_ = stereo_compute_disparity(left, right, w_size, max_disp);
+            cpp_l2r = cpp_l2r_;
+#endif
         }
 
         // PRINTLN(cpp_l2r);
         // PRINTLN(disp_l2r_roi);
+
+        // cv::Size resize_show(resize_to / 2);
+        // {
+        // cv::resize(disp_l2r_roi, disp_l2r_roi, resize_show);
+        // cv::resize(cpp_l2r, cpp_l2r, resize_show);
+        // }
 
         cv::imshow("GT disparity L2R", disp_l2r_roi);
         cv::imshow("Computed disparity L2R", cpp_l2r);
