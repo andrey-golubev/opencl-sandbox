@@ -19,10 +19,8 @@ int fix(int v, int max_v) {
     return v;
 }
 
-constexpr const int MAX_WINDOW_SIZE = 55;
 constexpr const double EPS = 0.0005;
 constexpr const uchar UNKNOWN_DISPARITY = 0;
-constexpr const double ZNCC_THR = 0.995;
 constexpr const int WINDOW_SIZE = 11;
 
 struct Range1d {

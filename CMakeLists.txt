@@ -35,6 +35,7 @@ set(CMAKE_CXX_FLAGS_RELWITHDEBINFO "${CMAKE_CXX_FLAGS} -g -O2 ${WARNARGS}")
 
 # include root folder
 include_directories(${CMAKE_CURRENT_SOURCE_DIR})
+set(ROOT_DIR ${CMAKE_CURRENT_SOURCE_DIR})
 
 # subfolders
 add_subdirectory(img_processor)
