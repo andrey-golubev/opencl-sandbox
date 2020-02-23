@@ -4,10 +4,15 @@
 #include <utility>
 
 #include <opencv2/core.hpp>
+#include <opencv2/core/hal/intrin.hpp>
 
 #include "common/utils.hpp"
 
-namespace stereo_cpp_base {
+#ifndef CV_SIMD
+#error "OpenCV's CV_SIMD undefined, impossible to use this header."
+#endif
+
+namespace stereo_cpp_opt {
 int fix(int v, int max_v) {
     if (v < 0) {
         return -v;
@@ -18,14 +23,19 @@ int fix(int v, int max_v) {
     return v;
 }
 
-// constants:
 constexpr const double EPS = 0.0005;
 constexpr const uchar UNKNOWN_DISPARITY = 0;
 constexpr const int WINDOW_SIZE = 11;
 
+// SIMD specific paramsters:
+constexpr const int UINT8_LANES = cv::v_uint8::nlanes;
+
 // List of functions:
+// copies matrix with border for window_size
+cv::Mat copy_with_column_border(const cv::Mat& in, int window_size);
 // applies box blur filter
 void box_blur(const uchar* in, uchar* out, int rows, int cols, int window_size);
+void box_blur(const uchar* in, uchar* out, int rows, int cols, int window_size, uchar* buf);
 // creates disparity map
 cv::Mat make_disparity_map(const cv::Mat& left, const cv::Mat& left_mean, const cv::Mat& right,
                            const cv::Mat& right_mean, int window_size, int disparity, int lds,
@@ -36,8 +46,11 @@ void cross_check_disparity(cv::Mat& l2r, const cv::Mat& r2l, int disparity);
 void fill_occlusions_disparity(cv::Mat& data, int k_size, int disparity);
 
 // List of kernels:
-// returns box blur value for pixel
-uchar _kernel_box_blur(const uchar* in, int idx_i, int idx_j, int rows, int cols, int k_size);
+// copies row
+void _kernel_copy(const uchar* in, uchar* out, int cols);
+// applies box blur
+void _kernel_box_blur(const uchar* in, uchar* out, int idx_i, int rows, int cols, int k_size,
+                      uchar* buf);
 // returns zncc value for given (idx_i, idx_j, d)
 double _kernel_zncc(const uchar* left, uchar l_mean, const uchar* right, uchar r_mean, int rows,
                     int cols, int k_size, int idx_i, int idx_j, int l_shift, int r_shift);
@@ -126,11 +139,80 @@ cv::Mat make_disparity_map(const cv::Mat& left, const cv::Mat& left_mean, const 
 
 // box blur:
 void box_blur(const uchar* in, uchar* out, int rows, int cols, int k_size) {
-    for (int idx_i = 0; idx_i < rows; ++idx_i) {
-        for (int idx_j = 0; idx_j < cols; ++idx_j) {
-            out[idx_i * cols + idx_j] = _kernel_box_blur(in, idx_i, idx_j, rows, cols, k_size);
-        }
+    cv::Mat intermediate(cv::Size(cols, k_size), CV_16UC1);
+    box_blur(in, out, rows, cols, k_size, intermediate.data);
+}
+
+// // skip extra work items
+// if (out_of_bounds(idx_i, 0, rows - 1) || out_of_bounds(idx_j, 0, cols - 1)) {
+//     return;
+// }
+
+// const int k_size = 5;
+
+// // prepare lines in advance
+// __global const uchar* in_lines[5] = {};  // 5 - k_size
+// for (int i = 0; i < k_size; ++i) {
+//     const int ii = fix(idx_i + i - 2, rows - 1);  // 2 - shift for pixel to be in kernel middle
+//     in_lines[i] = in + ii * cols;
+// }
+
+// // prepare column indices in advance
+// int js[5] = {};  // 5 - k_size
+// for (int j = 0; j < k_size; ++j) {
+//     js[j] = fix(idx_j + j - 2, cols - 1);  // 2 - shift for pixel to be in kernel middle
+// }
+
+// // main loop
+// uint sum = 0;
+// for (int i = 0; i < k_size; ++i) {
+//     for (int j = 0; j < k_size; ++j) {
+//         sum += in_lines[ i ][ js[j] ];
+//     }
+// }
+
+// out[idx_i * cols + idx_j] = round(0.04 * sum);  // 0.04 = 1/25
+
+void box_blur(const uchar* in, uchar* out, int rows, int cols, int k_size, uchar* buf) {
+    REQUIRE(k_size <= WINDOW_SIZE);
+
+    uchar* buf_ptrs[WINDOW_SIZE] = {};  // pointer to each row in intermediate buf
+    for (int i = 0; i < k_size; ++i) {
+        buf_ptrs[i] = (buf + i * cols);
     }
+
+    const uchar* in_ptrs[WINDOW_SIZE] = {};  // pointer to each row in input
+
+    const int center_shift = (k_size - 1) / 2;
+    for (int idx_i = 0; idx_i < rows; ++idx_i) {
+        for (int i = 0; i < k_size; ++i) {
+            const int ii = fix(idx_i + i - center_shift, rows - 1);
+            in_ptrs[i] = (in + ii * cols);
+        }
+
+        // _kernel_box_blur(in_ptrs, out, idx_i, rows, cols, k_size, buf_ptrs);
+        return;
+    }
+}
+
+void _kernel_box_blur(const uchar* in[], uchar* out, int idx_i, int rows, int cols, int k_size,
+                      uchar* buf[]) {
+    return;
+    // const int center_shift = (k_size - 1) / 2;
+
+    // run kernel for single row
+
+    // horizontal pass:
+    // for (int k = 0; k < k_size; ++k) {
+    //     for (int idx_j = 0; idx_j < cols;) {
+    //         // promoting uchar to uint16 to ensure no overflow
+    //         constexpr const int nlanes = cv::v_uint8::nlanes;
+
+    //         for (; idx_j <= cols - nlanes; idx_j += nlanes) {
+    //             cv::v_uint16 ts[WINDOW_SIZE] = {};
+    //         }
+    //     }
+    // }
 }
 
 void cross_check_disparity(cv::Mat& l2r, const cv::Mat& r2l, int disparity) {
@@ -156,21 +238,6 @@ void fill_occlusions_disparity(cv::Mat& data, int k_size, int disparity) {
         //       whole matrix)
         _kernel_fill_occlusions_disparity(data.data, idx_i, cols, k_size, disparity);
     }
-}
-
-uchar _kernel_box_blur(const uchar* in, int idx_i, int idx_j, int rows, int cols, int k_size) {
-    const double multiplier = 1.0 / (k_size * k_size);
-    const int center_shift = (k_size - 1) / 2;
-
-    int sum = 0;
-    for (int i = 0; i < k_size; ++i) {
-        const int ii = fix(idx_i + i - center_shift, rows - 1);
-        for (int j = 0; j < k_size; ++j) {
-            const int jj = fix(idx_j + j - center_shift, cols - 1);
-            sum += in[ii * cols + jj];
-        }
-    }
-    return uchar(std::round(multiplier * sum));
 }
 
 double _kernel_zncc(const uchar* left, uchar l_mean, const uchar* right, uchar r_mean, int rows,
@@ -221,4 +288,44 @@ void _kernel_fill_occlusions_disparity(uchar* data, int idx_i, int cols, int k_s
         }
     }
 }
-}  // namespace stereo_cpp_base
+
+// copy row
+void _kernel_copy(const uchar* in, uchar* out, int cols) {
+    for (int l = 0; l < cols;) {
+        for (; l <= cols - UINT8_LANES; l += UINT8_LANES) {
+            cv::v_uint8x16 p = cv::v_load(&in[l]);
+            cv::v_store(&out[l], p);
+        }
+
+        // tail:
+        if (l < cols) {
+            l = cols - UINT8_LANES;
+        }
+    }
+}
+
+cv::Mat copy_with_column_border(const cv::Mat& in, int window_size) {
+    REQUIRE(in.type() == CV_8UC1);
+    const int rows = in.rows, cols = in.cols;
+    REQUIRE(cols >= UINT8_LANES);
+    const int border = (window_size - 1) / 2;
+
+    cv::Mat out = cv::Mat::zeros(cv::Size(cols + border * 2, rows), in.type());
+    for (int i = 0; i < rows; ++i) {
+        const uchar* in_row = (in.data + i * cols);
+        uchar* out_row = (out.data + i * (cols + border * 2));
+
+        // fast copy within a known region
+        _kernel_copy(in_row, out_row + border, cols);
+
+        // slow copy border pixels
+        for (int j = 1; j <= border; ++j) {
+            // do reflect101 copy
+            out_row[border - j] = in_row[j];
+            out_row[cols - 1 + border + j] = in_row[cols - 1 - j];
+        }
+    }
+
+    return out;
+}
+}  // namespace stereo_cpp_opt

@@ -10,6 +10,8 @@
 
 // CPP stereo algo:
 #include "stereo_disparity_cpp_inl.hpp"
+// CPP optimized stereo algo:
+#include "stereo_disparity_cpp_opt_inl.hpp"
 
 // PFM image reader:
 #include "pfm_reader.hpp"
@@ -40,8 +42,12 @@ std::map<std::string, void (*)(int, int)> ALL_TESTS = {};
     ALL_TESTS["TEST_" #suffix] = [](int platform_id, int device_id) /* test body starts here */
 
 const cv::Size TEST_SIZES[] = {
-    cv::Size(1920, 1080), cv::Size(640, 480), cv::Size(189, 279), cv::Size(12, 12), cv::Size(5, 5),
+    cv::Size(1920, 1080), cv::Size(640, 480), cv::Size(189, 279),
+    cv::Size(12, 12),     cv::Size(200, 5),   cv::Size(5, 5),
 };
+
+const cv::Size TEST_SIZES_MIN_16[] = {cv::Size(1920, 1080), cv::Size(640, 480), cv::Size(189, 279),
+                                      cv::Size(16, 16), cv::Size(200, 5)};
 
 cv::Mat test_make_mean(const cv::Mat& in, int k_size) {
     cv::Mat out;
@@ -67,7 +73,22 @@ void declare_tests() {
             }
         }
     };
-    TEST(DISPARITY_MAP_SANITY) {
+    TEST(COPY_MAT) {
+        for (const auto& size : TEST_SIZES_MIN_16) {
+            cv::Mat in(size, CV_8UC1);
+            cv::randu(in, cv::Scalar(0), cv::Scalar(255));
+
+            cv::Mat ocv;
+
+            for (int k_size : {0, 3, 5}) {
+                const int border = (k_size - 1) / 2;
+                cv::copyMakeBorder(in, ocv, 0, 0, border, border, cv::BORDER_REFLECT101);
+                cv::Mat cpp = stereo_cpp_opt::copy_with_column_border(in, k_size);
+                REQUIRE(cv::countNonZero(ocv != cpp) == 0);
+            }
+        }
+    };
+    TEST(DISABLED_DISPARITY_MAP_SANITY) {
         for (auto append : {"/backpack/", "/umbrella/"}) {
             std::string folder = TEST_DATA_FOLDER + append;
             cv::Mat left_img = cv::imread(folder + "im0.png");
