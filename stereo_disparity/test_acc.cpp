@@ -46,9 +46,6 @@ const cv::Size TEST_SIZES[] = {
     cv::Size(12, 12),     cv::Size(200, 5),   cv::Size(5, 5),
 };
 
-const cv::Size TEST_SIZES_MIN_16[] = {cv::Size(1920, 1080), cv::Size(640, 480), cv::Size(189, 279),
-                                      cv::Size(16, 16), cv::Size(200, 5)};
-
 cv::Mat test_make_mean(const cv::Mat& in, int k_size) {
     cv::Mat out;
     cv::boxFilter(in, out, -1, cv::Size(k_size, k_size));
@@ -74,16 +71,19 @@ void declare_tests() {
         }
     };
     TEST(COPY_MAT) {
+        const cv::Size TEST_SIZES_MIN_16[] = {cv::Size(1920, 1080), cv::Size(640, 480),
+                                              cv::Size(189, 279), cv::Size(16, 16),
+                                              cv::Size(200, 5)};
         for (const auto& size : TEST_SIZES_MIN_16) {
             cv::Mat in(size, CV_8UC1);
             cv::randu(in, cv::Scalar(0), cv::Scalar(255));
 
             cv::Mat ocv;
 
-            for (int k_size : {0, 3, 5}) {
+            for (int k_size : {0, 3, 7}) {
                 const int border = (k_size - 1) / 2;
-                cv::copyMakeBorder(in, ocv, 0, 0, border, border, cv::BORDER_REFLECT101);
-                cv::Mat cpp = stereo_cpp_opt::copy_with_column_border(in, k_size);
+                cv::copyMakeBorder(in, ocv, border, border, border, border, cv::BORDER_REFLECT101);
+                cv::Mat cpp = stereo_cpp_opt::copy_make_border(in, k_size);
                 REQUIRE(cv::countNonZero(ocv != cpp) == 0);
             }
         }

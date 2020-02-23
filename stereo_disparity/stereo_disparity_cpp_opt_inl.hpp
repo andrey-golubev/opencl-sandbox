@@ -31,8 +31,9 @@ constexpr const int WINDOW_SIZE = 11;
 constexpr const int UINT8_LANES = cv::v_uint8::nlanes;
 
 // List of functions:
+
 // copies matrix with border for window_size
-cv::Mat copy_with_column_border(const cv::Mat& in, int window_size);
+cv::Mat copy_make_border(const cv::Mat& in, int window_size);
 // applies box blur filter
 void box_blur(const uchar* in, uchar* out, int rows, int cols, int window_size);
 void box_blur(const uchar* in, uchar* out, int rows, int cols, int window_size, uchar* buf);
@@ -46,6 +47,7 @@ void cross_check_disparity(cv::Mat& l2r, const cv::Mat& r2l, int disparity);
 void fill_occlusions_disparity(cv::Mat& data, int k_size, int disparity);
 
 // List of kernels:
+
 // copies row
 void _kernel_copy(const uchar* in, uchar* out, int cols);
 // applies box blur
@@ -304,25 +306,47 @@ void _kernel_copy(const uchar* in, uchar* out, int cols) {
     }
 }
 
-cv::Mat copy_with_column_border(const cv::Mat& in, int window_size) {
+void _kernel_copy_make_border(const uchar* in_row, uchar* out_row, int cols, int border) {
+    // fast copy within in_row region
+    _kernel_copy(in_row, out_row + border, cols);
+
+    // slow copy border pixels
+    for (int j = 1; j <= border; ++j) {
+        // do reflect101 copy
+        out_row[border - j] = in_row[j];
+        out_row[cols - 1 + border + j] = in_row[cols - 1 - j];
+    }
+}
+
+cv::Mat copy_make_border(const cv::Mat& in, int window_size) {
     REQUIRE(in.type() == CV_8UC1);
     const int rows = in.rows, cols = in.cols;
     REQUIRE(cols >= UINT8_LANES);
     const int border = (window_size - 1) / 2;
 
-    cv::Mat out = cv::Mat::zeros(cv::Size(cols + border * 2, rows), in.type());
+    cv::Mat out = cv::Mat::zeros(cv::Size(cols + border * 2, rows + border * 2), in.type());
+
+    // copy input rows
     for (int i = 0; i < rows; ++i) {
         const uchar* in_row = (in.data + i * cols);
-        uchar* out_row = (out.data + i * (cols + border * 2));
+        uchar* out_row = (out.data + (i + border) * (cols + border * 2));
+        _kernel_copy_make_border(in_row, out_row, cols, border);
+    }
 
-        // fast copy within a known region
-        _kernel_copy(in_row, out_row + border, cols);
-
-        // slow copy border pixels
-        for (int j = 1; j <= border; ++j) {
-            // do reflect101 copy
-            out_row[border - j] = in_row[j];
-            out_row[cols - 1 + border + j] = in_row[cols - 1 - j];
+    // copy reflected rows
+    for (int j = 1; j <= border; ++j) {
+        // do reflect101 copy
+        // top
+        {
+            const uchar* in_row = (in.data + j * cols);
+            uchar* out_row = (out.data + (border - j) * (cols + border * 2));
+            _kernel_copy_make_border(in_row, out_row, cols, border);
+        }
+        // bottom
+        {
+            const uchar* in_row = (in.data + (rows - 1 - j) * cols);
+            uchar* out_row = (out.data + (rows - 1 + border + j) * (cols + border * 2));
+            _kernel_copy_make_border(in_row, out_row, cols, border);
         }
     }
 
