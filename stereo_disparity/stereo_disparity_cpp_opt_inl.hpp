@@ -36,7 +36,7 @@ constexpr const int UINT8_LANES = cv::v_uint8::nlanes;
 cv::Mat copy_make_border(const cv::Mat& in, int window_size);
 // applies box blur filter
 void box_blur(const uchar* in, uchar* out, int rows, int cols, int window_size);
-void box_blur(const uchar* in, uchar* out, int rows, int cols, int window_size, uchar* buf);
+void box_blur(const uchar* in, uchar* out, int rows, int cols, int window_size, ushort* buf);
 // creates disparity map
 cv::Mat make_disparity_map(const cv::Mat& left, const cv::Mat& left_mean, const cv::Mat& right,
                            const cv::Mat& right_mean, int window_size, int disparity, int lds,
@@ -50,9 +50,6 @@ void fill_occlusions_disparity(cv::Mat& data, int k_size, int disparity);
 
 // copies row
 void _kernel_copy(const uchar* in, uchar* out, int cols);
-// applies box blur
-void _kernel_box_blur(const uchar* in, uchar* out, int idx_i, int rows, int cols, int k_size,
-                      uchar* buf);
 // returns zncc value for given (idx_i, idx_j, d)
 double _kernel_zncc(const uchar* left, uchar l_mean, const uchar* right, uchar r_mean, int rows,
                     int cols, int k_size, int idx_i, int idx_j, int l_shift, int r_shift);
@@ -142,7 +139,7 @@ cv::Mat make_disparity_map(const cv::Mat& left, const cv::Mat& left_mean, const 
 // box blur:
 void box_blur(const uchar* in, uchar* out, int rows, int cols, int k_size) {
     cv::Mat intermediate(cv::Size(cols, k_size), CV_16UC1);
-    box_blur(in, out, rows, cols, k_size, intermediate.data);
+    box_blur(in, out, rows, cols, k_size, (ushort*)(intermediate.data));
 }
 
 // // skip extra work items
@@ -175,10 +172,22 @@ void box_blur(const uchar* in, uchar* out, int rows, int cols, int k_size) {
 
 // out[idx_i * cols + idx_j] = round(0.04 * sum);  // 0.04 = 1/25
 
-void box_blur(const uchar* in, uchar* out, int rows, int cols, int k_size, uchar* buf) {
+void _kernel_box_blur(const uchar* in[], uchar* out, int rows, int cols, int k_size,
+                      ushort* buf[]) {
+    // const int center_shift = (k_size - 1) / 2;
+    // run kernel for single row
+
+    // horizontal pass:
+    for (int k = 0; k < k_size; ++k) {
+        for (int l = 0; l < cols; ++l) {
+        }
+    }
+}
+
+void box_blur(const uchar* in, uchar* out, int rows, int cols, int k_size, ushort* buf) {
     REQUIRE(k_size <= WINDOW_SIZE);
 
-    uchar* buf_ptrs[WINDOW_SIZE] = {};  // pointer to each row in intermediate buf
+    ushort* buf_ptrs[WINDOW_SIZE] = {};  // pointer to each row in intermediate buf
     for (int i = 0; i < k_size; ++i) {
         buf_ptrs[i] = (buf + i * cols);
     }
@@ -188,33 +197,13 @@ void box_blur(const uchar* in, uchar* out, int rows, int cols, int k_size, uchar
     const int center_shift = (k_size - 1) / 2;
     for (int idx_i = 0; idx_i < rows; ++idx_i) {
         for (int i = 0; i < k_size; ++i) {
-            const int ii = fix(idx_i + i - center_shift, rows - 1);
+            const int ii = idx_i + i - center_shift;
             in_ptrs[i] = (in + ii * cols);
         }
 
-        // _kernel_box_blur(in_ptrs, out, idx_i, rows, cols, k_size, buf_ptrs);
+        _kernel_box_blur(in_ptrs, out, rows, cols, k_size, buf_ptrs);
         return;
     }
-}
-
-void _kernel_box_blur(const uchar* in[], uchar* out, int idx_i, int rows, int cols, int k_size,
-                      uchar* buf[]) {
-    return;
-    // const int center_shift = (k_size - 1) / 2;
-
-    // run kernel for single row
-
-    // horizontal pass:
-    // for (int k = 0; k < k_size; ++k) {
-    //     for (int idx_j = 0; idx_j < cols;) {
-    //         // promoting uchar to uint16 to ensure no overflow
-    //         constexpr const int nlanes = cv::v_uint8::nlanes;
-
-    //         for (; idx_j <= cols - nlanes; idx_j += nlanes) {
-    //             cv::v_uint16 ts[WINDOW_SIZE] = {};
-    //         }
-    //     }
-    // }
 }
 
 void cross_check_disparity(cv::Mat& l2r, const cv::Mat& r2l, int disparity) {
@@ -333,9 +322,8 @@ cv::Mat copy_make_border(const cv::Mat& in, int window_size) {
         _kernel_copy_make_border(in_row, out_row, cols, border);
     }
 
-    // copy reflected rows
+    // copy reflected rows (reflect101)
     for (int j = 1; j <= border; ++j) {
-        // do reflect101 copy
         // top
         {
             const uchar* in_row = (in.data + j * cols);

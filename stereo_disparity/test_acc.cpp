@@ -70,7 +70,7 @@ void declare_tests() {
             }
         }
     };
-    TEST(COPY_MAT) {
+    TEST(COPY_MAKE_BORDER_OPT) {
         const cv::Size TEST_SIZES_MIN_16[] = {cv::Size(1920, 1080), cv::Size(640, 480),
                                               cv::Size(189, 279), cv::Size(16, 16),
                                               cv::Size(200, 5)};
