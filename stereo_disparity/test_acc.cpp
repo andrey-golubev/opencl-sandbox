@@ -88,13 +88,22 @@ void declare_tests() {
             }
         }
     };
-    TEST(DISABLED_DISPARITY_MAP_SANITY) {
+    TEST(DISPARITY_MAP_SANITY) {
+#define SHOW 0
+#if SHOW
+        for (auto append : {"/backpack/"}) {
+#else
         for (auto append : {"/backpack/", "/umbrella/"}) {
+#endif
             std::string folder = TEST_DATA_FOLDER + append;
             cv::Mat left_img = cv::imread(folder + "im0.png");
             cv::Mat right_img = cv::imread(folder + "im1.png");
 
+#if SHOW
+            cv::Size resize_to(640, 480);  // resized down for increased speed
+#else
             cv::Size resize_to(100, 100);  // resized down for increased speed
+#endif
             {
                 cv::resize(left_img, left_img, resize_to);
                 cv::resize(right_img, right_img, resize_to);
@@ -106,14 +115,27 @@ void declare_tests() {
 
             // test code:
             cv::Mat cpp_disp;
+
+#if SHOW
+            int max_disp = 200;
+#else
             int max_disp = 50;
+#endif
             cpp_disp = stereo_cpp_base::stereo_compute_disparity(left, right, max_disp);
 
             cv::Mat zero = cv::Mat::zeros(cpp_disp.size(), cpp_disp.type());
 
             REQUIRE(cpp_disp.type() == CV_8UC1);
             REQUIRE(cv::countNonZero(zero == cpp_disp) < (cpp_disp.rows * cpp_disp.cols));
+
+#if SHOW
+            cv::imshow("DISP", cpp_disp);
+#endif
         }
+#if SHOW
+        while (cv::waitKey() != 27)
+            ;
+#endif
     };
 }
 

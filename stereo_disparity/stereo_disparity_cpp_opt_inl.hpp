@@ -8,6 +8,8 @@
 
 #include "common/utils.hpp"
 
+#include "stereo_common.hpp"
+
 #ifndef CV_SIMD
 #error "OpenCV's CV_SIMD undefined, impossible to use this header."
 #endif
@@ -23,12 +25,8 @@ int fix(int v, int max_v) {
     return v;
 }
 
-constexpr const double EPS = 0.0005;
-constexpr const uchar UNKNOWN_DISPARITY = 0;
-constexpr const int WINDOW_SIZE = 11;
-
-// SIMD specific paramsters:
-constexpr const int UINT8_LANES = cv::v_uint8::nlanes;
+// SIMD specific constants:
+constexpr const int UINT8_NLANES = cv::v_uint8::nlanes;
 
 // List of functions:
 
@@ -36,11 +34,9 @@ constexpr const int UINT8_LANES = cv::v_uint8::nlanes;
 cv::Mat copy_make_border(const cv::Mat& in, int window_size);
 // applies box blur filter
 void box_blur(const uchar* in, uchar* out, int rows, int cols, int window_size);
-void box_blur(const uchar* in, uchar* out, int rows, int cols, int window_size, ushort* buf);
 // creates disparity map
 cv::Mat make_disparity_map(const cv::Mat& left, const cv::Mat& left_mean, const cv::Mat& right,
-                           const cv::Mat& right_mean, int window_size, int disparity, int lds,
-                           int rds);
+                           const cv::Mat& right_mean, int window_size, int d_first, int d_last);
 // cross-checks 2 disparity maps
 void cross_check_disparity(cv::Mat& l2r, const cv::Mat& r2l, int disparity);
 // fills occlusions in disparity map inplace
@@ -48,11 +44,11 @@ void fill_occlusions_disparity(cv::Mat& data, int k_size, int disparity);
 
 // List of kernels:
 
-// copies row
-void _kernel_copy(const uchar* in, uchar* out, int cols);
+// returns box blur value for pixel
+uchar _kernel_box_blur(const uchar* in, int idx_i, int idx_j, int rows, int cols, int k_size);
 // returns zncc value for given (idx_i, idx_j, d)
 double _kernel_zncc(const uchar* left, uchar l_mean, const uchar* right, uchar r_mean, int rows,
-                    int cols, int k_size, int idx_i, int idx_j, int l_shift, int r_shift);
+                    int cols, int k_size, int idx_i, int idx_j, int d);
 // fill occlusions in a row
 void _kernel_fill_occlusions_disparity(uchar* data, int idx_i, int cols, int k_size, int disparity);
 
@@ -69,12 +65,10 @@ std::pair<cv::Mat, cv::Mat> stereo_compute_disparities_impl(const cv::Mat& left,
     box_blur(right.data, right_mean.data, rows, cols, window_size);
 
     // 2. find disparity maps (L2R and R2L):
-    constexpr const int L2R_MAGIC_SHIFT_COEFFS[2] = {0, -1};
-    constexpr const int R2L_MAGIC_SHIFT_COEFFS[2] = {1, 0};
-    auto map_l2r = make_disparity_map(left, left_mean, right, right_mean, window_size, disparity,
-                                      L2R_MAGIC_SHIFT_COEFFS[0], L2R_MAGIC_SHIFT_COEFFS[1]);
-    auto map_r2l = make_disparity_map(right, right_mean, left, left_mean, window_size, disparity,
-                                      R2L_MAGIC_SHIFT_COEFFS[0], R2L_MAGIC_SHIFT_COEFFS[1]);
+    auto map_l2r =
+        make_disparity_map(left, left_mean, right, right_mean, window_size, -disparity, 0);
+    auto map_r2l =
+        make_disparity_map(right, right_mean, left, left_mean, window_size, 0, disparity);
 
     return {map_l2r, map_r2l};
 }
@@ -91,19 +85,18 @@ cv::Mat stereo_compute_disparity(const cv::Mat& left, const cv::Mat& right, int 
     // 1. find disparity maps (L2R and R2L):
     cv::Mat map_l2r, map_r2l;
     std::tie(map_l2r, map_r2l) =
-        stereo_compute_disparities_impl(left, right, WINDOW_SIZE, disparity);
+        stereo_compute_disparities_impl(left, right, stereo_common::WINDOW_SIZE, disparity);
 
     // 2. post process:
     cross_check_disparity(map_l2r, map_r2l, disparity);
-    fill_occlusions_disparity(map_l2r, WINDOW_SIZE, disparity);
+    fill_occlusions_disparity(map_l2r, stereo_common::WINDOW_SIZE, disparity);
 
     return map_l2r;
 }
 
 // makes disparity map
 cv::Mat make_disparity_map(const cv::Mat& left, const cv::Mat& left_mean, const cv::Mat& right,
-                           const cv::Mat& right_mean, int window_size, int disparity, int lds,
-                           int rds) {
+                           const cv::Mat& right_mean, int window_size, int d_first, int d_last) {
     const int rows = left.rows, cols = left.cols;
 
     cv::Mat disparity_map = cv::Mat::zeros(left.size(), CV_8UC1);
@@ -115,16 +108,17 @@ cv::Mat make_disparity_map(const cv::Mat& left, const cv::Mat& left_mean, const 
             // find max zncc and corresponding disparity for current pixel:
             double max_zncc = -1.0;  // zncc in range [-1, 1]
 
-            for (int d = -disparity; d <= disparity; ++d) {
-                int l_shift = lds * d;
-                int r_shift = rds * d;
-                uchar l_mean = left_mean.data[idx_i * cols + fix(idx_j + l_shift, cols - 1)];
-                uchar r_mean = right_mean.data[idx_i * cols + fix(idx_j + r_shift, cols - 1)];
+            uchar l_mean = left_mean.data[idx_i * cols + idx_j];
+            for (int d = d_first; d <= d_last; ++d) {
+                uchar r_mean = right_mean.data[idx_i * cols + fix(idx_j + d, cols - 1)];
                 double v = _kernel_zncc(left.data, l_mean, right.data, r_mean, rows, cols,
-                                        window_size, idx_i, idx_j, l_shift, r_shift);
+                                        window_size, idx_i, idx_j, d);
                 if (max_zncc < v) {
                     max_zncc = v;
                     best_disparity = d;
+                }
+                if (max_zncc >= stereo_common::ZNCC_THRESHOLD) {
+                    break;
                 }
             }
 
@@ -138,71 +132,10 @@ cv::Mat make_disparity_map(const cv::Mat& left, const cv::Mat& left_mean, const 
 
 // box blur:
 void box_blur(const uchar* in, uchar* out, int rows, int cols, int k_size) {
-    cv::Mat intermediate(cv::Size(cols, k_size), CV_16UC1);
-    box_blur(in, out, rows, cols, k_size, (ushort*)(intermediate.data));
-}
-
-// // skip extra work items
-// if (out_of_bounds(idx_i, 0, rows - 1) || out_of_bounds(idx_j, 0, cols - 1)) {
-//     return;
-// }
-
-// const int k_size = 5;
-
-// // prepare lines in advance
-// __global const uchar* in_lines[5] = {};  // 5 - k_size
-// for (int i = 0; i < k_size; ++i) {
-//     const int ii = fix(idx_i + i - 2, rows - 1);  // 2 - shift for pixel to be in kernel middle
-//     in_lines[i] = in + ii * cols;
-// }
-
-// // prepare column indices in advance
-// int js[5] = {};  // 5 - k_size
-// for (int j = 0; j < k_size; ++j) {
-//     js[j] = fix(idx_j + j - 2, cols - 1);  // 2 - shift for pixel to be in kernel middle
-// }
-
-// // main loop
-// uint sum = 0;
-// for (int i = 0; i < k_size; ++i) {
-//     for (int j = 0; j < k_size; ++j) {
-//         sum += in_lines[ i ][ js[j] ];
-//     }
-// }
-
-// out[idx_i * cols + idx_j] = round(0.04 * sum);  // 0.04 = 1/25
-
-void _kernel_box_blur(const uchar* in[], uchar* out, int rows, int cols, int k_size,
-                      ushort* buf[]) {
-    // const int center_shift = (k_size - 1) / 2;
-    // run kernel for single row
-
-    // horizontal pass:
-    for (int k = 0; k < k_size; ++k) {
-        for (int l = 0; l < cols; ++l) {
-        }
-    }
-}
-
-void box_blur(const uchar* in, uchar* out, int rows, int cols, int k_size, ushort* buf) {
-    REQUIRE(k_size <= WINDOW_SIZE);
-
-    ushort* buf_ptrs[WINDOW_SIZE] = {};  // pointer to each row in intermediate buf
-    for (int i = 0; i < k_size; ++i) {
-        buf_ptrs[i] = (buf + i * cols);
-    }
-
-    const uchar* in_ptrs[WINDOW_SIZE] = {};  // pointer to each row in input
-
-    const int center_shift = (k_size - 1) / 2;
     for (int idx_i = 0; idx_i < rows; ++idx_i) {
-        for (int i = 0; i < k_size; ++i) {
-            const int ii = idx_i + i - center_shift;
-            in_ptrs[i] = (in + ii * cols);
+        for (int idx_j = 0; idx_j < cols; ++idx_j) {
+            out[idx_i * cols + idx_j] = _kernel_box_blur(in, idx_i, idx_j, rows, cols, k_size);
         }
-
-        _kernel_box_blur(in_ptrs, out, rows, cols, k_size, buf_ptrs);
-        return;
     }
 }
 
@@ -216,7 +149,7 @@ void cross_check_disparity(cv::Mat& l2r, const cv::Mat& r2l, int disparity) {
             int r2l_pixel = r2l.at<uchar>(i, j);
 
             if (std::abs(l2r_pixel - r2l_pixel) > threshold) {
-                l2r.at<uchar>(i, j) = UNKNOWN_DISPARITY;
+                l2r.at<uchar>(i, j) = std::min(l2r_pixel, r2l_pixel);
             }
         }
     }
@@ -231,11 +164,26 @@ void fill_occlusions_disparity(cv::Mat& data, int k_size, int disparity) {
     }
 }
 
-double _kernel_zncc(const uchar* left, uchar l_mean, const uchar* right, uchar r_mean, int rows,
-                    int cols, int k_size, int idx_i, int idx_j, int l_shift, int r_shift) {
+uchar _kernel_box_blur(const uchar* in, int idx_i, int idx_j, int rows, int cols, int k_size) {
+    const double multiplier = 1.0 / (k_size * k_size);
     const int center_shift = (k_size - 1) / 2;
 
-    int64_t sum = 0;  // can get bigger than uchar in theory, so using uint
+    int sum = 0;
+    for (int i = 0; i < k_size; ++i) {
+        const int ii = fix(idx_i + i - center_shift, rows - 1);
+        for (int j = 0; j < k_size; ++j) {
+            const int jj = fix(idx_j + j - center_shift, cols - 1);
+            sum += in[ii * cols + jj];
+        }
+    }
+    return uchar(std::round(multiplier * sum));
+}
+
+double _kernel_zncc(const uchar* left, uchar l_mean, const uchar* right, uchar r_mean, int rows,
+                    int cols, int k_size, int idx_i, int idx_j, int d) {
+    const int center_shift = (k_size - 1) / 2;
+
+    int sum = 0;
     double std_left = 0.0, std_right = 0.0;
 
     // TODO: look at cv::integral for speed-up
@@ -244,13 +192,13 @@ double _kernel_zncc(const uchar* left, uchar l_mean, const uchar* right, uchar r
         const int ii = fix(idx_i + i - center_shift, rows - 1);
 
         for (int j = 0; j < k_size; ++j) {
-            const int jj1 = fix(idx_j + j - center_shift + l_shift, cols - 1);
-            const int jj2 = fix(idx_j + j - center_shift + r_shift, cols - 1);
+            const int jj1 = fix(idx_j + j - center_shift, cols - 1);
+            const int jj2 = fix(idx_j + j - center_shift + d, cols - 1);
 
-            int left_pixel = left[ii * cols + jj1] - l_mean;
-            int right_pixel = right[ii * cols + jj2] - r_mean;
+            const int left_pixel = int(left[ii * cols + jj1]) - int(l_mean);
+            const int right_pixel = int(right[ii * cols + jj2]) - int(r_mean);
 
-            sum += int64_t(left_pixel) * right_pixel;
+            sum += left_pixel * right_pixel;
 
             std_left += std::pow(left_pixel, 2);
             std_right += std::pow(right_pixel, 2);
@@ -258,8 +206,8 @@ double _kernel_zncc(const uchar* left, uchar l_mean, const uchar* right, uchar r
     }
 
     // ensure STD DEV >= EPS (otherwise we get Inf)
-    std_left = std::max(std::sqrt(std_left), EPS);
-    std_right = std::max(std::sqrt(std_right), EPS);
+    std_left = std::max(std::sqrt(std_left), stereo_common::EPS);
+    std_right = std::max(std::sqrt(std_right), stereo_common::EPS);
 
     return double(sum) / (std_left * std_right);
 }
@@ -272,7 +220,7 @@ void _kernel_fill_occlusions_disparity(uchar* data, int idx_i, int cols, int k_s
     uchar nearest_intensity = 0;
     for (int idx_j = 0; idx_j < cols; ++idx_j) {
         uchar pixel = data[idx_i * cols + idx_j];
-        if (pixel == UNKNOWN_DISPARITY) {
+        if (pixel == stereo_common::UNKNOWN_DISPARITY) {
             data[idx_i * cols + idx_j] = nearest_intensity;
         } else {
             nearest_intensity = pixel;
@@ -283,14 +231,14 @@ void _kernel_fill_occlusions_disparity(uchar* data, int idx_i, int cols, int k_s
 // copy row
 void _kernel_copy(const uchar* in, uchar* out, int cols) {
     for (int l = 0; l < cols;) {
-        for (; l <= cols - UINT8_LANES; l += UINT8_LANES) {
+        for (; l <= cols - UINT8_NLANES; l += UINT8_NLANES) {
             cv::v_uint8x16 p = cv::v_load(&in[l]);
             cv::v_store(&out[l], p);
         }
 
         // tail:
         if (l < cols) {
-            l = cols - UINT8_LANES;
+            l = cols - UINT8_NLANES;
         }
     }
 }
@@ -310,7 +258,7 @@ void _kernel_copy_make_border(const uchar* in_row, uchar* out_row, int cols, int
 cv::Mat copy_make_border(const cv::Mat& in, int window_size) {
     REQUIRE(in.type() == CV_8UC1);
     const int rows = in.rows, cols = in.cols;
-    REQUIRE(cols >= UINT8_LANES);
+    REQUIRE(cols >= UINT8_NLANES);
     const int border = (window_size - 1) / 2;
 
     cv::Mat out = cv::Mat::zeros(cv::Size(cols + border * 2, rows + border * 2), in.type());
