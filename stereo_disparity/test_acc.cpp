@@ -55,6 +55,12 @@ cv::Mat test_make_mean(const cv::Mat& in, int k_size) {
 std::string TEST_DATA_FOLDER = "";
 
 void declare_tests() {
+    TEST(INDEX_FIX_FUNCTION) {
+        REQUIRE(stereo_cpp_opt::fix(9, 10, 12) == 11);
+        REQUIRE(stereo_cpp_opt::fix(-1, 0, 5) == 1);
+        REQUIRE(stereo_cpp_opt::fix(6, 7, 9) == 8);
+        REQUIRE(stereo_cpp_opt::fix(13, 10, 12) == 11);
+    };
     TEST(BOX_BLUR_CPP) {
         for (const auto& size : TEST_SIZES) {
             cv::Mat in(size, CV_8UC1);
@@ -73,18 +79,20 @@ void declare_tests() {
     TEST(COPY_MAKE_BORDER_OPT) {
         const cv::Size TEST_SIZES_MIN_16[] = {cv::Size(1920, 1080), cv::Size(640, 480),
                                               cv::Size(189, 279), cv::Size(16, 16),
-                                              cv::Size(200, 5)};
+                                              cv::Size(200, 6)};
         for (const auto& size : TEST_SIZES_MIN_16) {
             cv::Mat in(size, CV_8UC1);
             cv::randu(in, cv::Scalar(0), cv::Scalar(255));
 
             cv::Mat ocv;
 
-            for (int k_size : {0, 3, 7}) {
-                const int border = (k_size - 1) / 2;
-                cv::copyMakeBorder(in, ocv, border, border, border, border, cv::BORDER_REFLECT101);
-                cv::Mat cpp = stereo_cpp_opt::copy_make_border(in, k_size);
-                REQUIRE(cv::countNonZero(ocv != cpp) == 0);
+            for (int r_border : {0, 1, 2, 3, 4, 5}) {
+                for (int c_border : {0, 1, 2, 3, 4, 5}) {
+                    cv::copyMakeBorder(in, ocv, r_border, r_border, c_border, c_border,
+                                       cv::BORDER_REFLECT101);
+                    cv::Mat cpp = stereo_cpp_opt::copy_make_border(in, r_border, c_border);
+                    REQUIRE(cv::countNonZero(ocv != cpp) == 0);
+                }
             }
         }
     };
@@ -136,6 +144,39 @@ void declare_tests() {
         while (cv::waitKey() != 27)
             ;
 #endif
+    };
+
+    TEST(DISPARITY_MAP_BASE_VS_OPT) {
+        for (auto append : {"/backpack/", "/umbrella/"}) {
+            std::string folder = TEST_DATA_FOLDER + append;
+            cv::Mat left_img = cv::imread(folder + "im0.png");
+            cv::Mat right_img = cv::imread(folder + "im1.png");
+
+            cv::Size resize_to(16, 6);  // resized down for increased speed
+            {
+                cv::resize(left_img, left_img, resize_to);
+                cv::resize(right_img, right_img, resize_to);
+            }
+
+            cv::Mat left, right;
+            cv::cvtColor(left_img, left, cv::COLOR_BGR2GRAY);
+            cv::cvtColor(right_img, right, cv::COLOR_BGR2GRAY);
+
+            // test code:
+            int max_disp = 5;
+            cv::Mat base_disp, opt_disp;
+
+            base_disp = stereo_cpp_base::stereo_compute_disparity(left, right, max_disp);
+            opt_disp = stereo_cpp_opt::stereo_compute_disparity(left, right, max_disp);
+
+            REQUIRE(base_disp.type() == opt_disp.type());
+            REQUIRE(base_disp.size() == opt_disp.size());
+
+            PRINTLN(base_disp);
+            PRINTLN(opt_disp);
+
+            REQUIRE(cv::countNonZero(base_disp != opt_disp) == 0);
+        }
     };
 }
 

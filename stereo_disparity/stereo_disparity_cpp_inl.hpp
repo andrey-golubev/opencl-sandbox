@@ -75,11 +75,11 @@ cv::Mat stereo_compute_disparity(const cv::Mat& left, const cv::Mat& right, int 
     // 1. find disparity maps (L2R and R2L):
     cv::Mat map_l2r, map_r2l;
     std::tie(map_l2r, map_r2l) =
-        stereo_compute_disparities_impl(left, right, stereo_common::WINDOW_SIZE, disparity);
+        stereo_compute_disparities_impl(left, right, stereo_common::MAX_WINDOW, disparity);
 
     // 2. post process:
     cross_check_disparity(map_l2r, map_r2l, disparity);
-    fill_occlusions_disparity(map_l2r, stereo_common::WINDOW_SIZE, disparity);
+    fill_occlusions_disparity(map_l2r, stereo_common::MAX_WINDOW, disparity);
 
     return map_l2r;
 }
@@ -139,7 +139,7 @@ void cross_check_disparity(cv::Mat& l2r, const cv::Mat& r2l, int disparity) {
             int r2l_pixel = r2l.at<uchar>(i, j);
 
             if (std::abs(l2r_pixel - r2l_pixel) > threshold) {
-                l2r.at<uchar>(i, j) = std::min(l2r_pixel, r2l_pixel);
+                l2r.at<uchar>(i, j) = stereo_common::UNKNOWN_DISPARITY;
             }
         }
     }
