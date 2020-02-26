@@ -14,6 +14,7 @@
 #include "common/utils.hpp"
 
 #include "stereo_common.hpp"
+#include "stereo_detail.hpp"
 
 #ifndef CV_SIMD
 #error "OpenCV's CV_SIMD undefined, impossible to use this header."
@@ -110,46 +111,51 @@ cv::Mat copy_make_border(const cv::Mat& in, int row_border, int col_border) {
     return out;
 }
 
-uchar _kernel_box_blur(const uchar* in, int idx_j, int cols, int k_size) {
+cv::Mat copy_make_border(const cv::Mat& in, detail::Border b) {
+    return copy_make_border(in, b.row_border, b.col_border);
+}
+
+uchar _kernel_box_blur(const uchar* in[], int idx_j, int k_size) {
     const double multiplier = 1.0 / (k_size * k_size);
     const int center_shift = (k_size - 1) / 2;
 
     int sum = 0;
     for (int i = 0; i < k_size; ++i) {
-        const int ii = i - center_shift;
         for (int j = 0; j < k_size; ++j) {
             const int jj = idx_j + j - center_shift;
-            sum += in[ii * cols + jj];
+            sum += in[i][jj];
         }
     }
     return uchar(std::round(multiplier * sum));
 }
 
 // box blur:
-void box_blur(uchar* out, const uchar* in, int cols, int k_size) {
+void box_blur(uchar* out, const detail::DataView& in_view, int cols, int k_size) {
+    const int center_shift = (k_size - 1) / 2;
+    const uchar* in[stereo_common::MAX_WINDOW] = {};
+    for (int i = 0; i < k_size; ++i) {
+        in[i] = in_view.line(i - center_shift);
+    }
+
     for (int idx_j = 0; idx_j < cols; ++idx_j) {
-        out[idx_j] = _kernel_box_blur(in, idx_j, cols, k_size);
+        out[idx_j] = _kernel_box_blur(in, idx_j, k_size);
     }
 }
 
-double _kernel_zncc(const uchar* left, uchar l_mean, const uchar* right, uchar r_mean, int cols,
-                    int k_size, int idx_j, int d) {
+double _kernel_zncc(const uchar* left[], uchar l_mean, const uchar* right[], uchar r_mean,
+                    int idx_j, int k_size, int d) {
     const int center_shift = (k_size - 1) / 2;
 
     int sum = 0;
     double std_left = 0.0, std_right = 0.0;
 
-    // TODO: look at cv::integral for speed-up
-
     for (int i = 0; i < k_size; ++i) {
-        const int ii = i - center_shift;
-
         for (int j = 0; j < k_size; ++j) {
             const int jj1 = idx_j + j - center_shift;
             const int jj2 = idx_j + j - center_shift + d;
 
-            const int left_pixel = int(left[ii * cols + jj1]) - int(l_mean);
-            const int right_pixel = int(right[ii * cols + jj2]) - int(r_mean);
+            const int left_pixel = int(left[i][jj1]) - int(l_mean);
+            const int right_pixel = int(right[i][jj2]) - int(r_mean);
 
             sum += left_pixel * right_pixel;
 
@@ -166,9 +172,24 @@ double _kernel_zncc(const uchar* left, uchar l_mean, const uchar* right, uchar r
 }
 
 // makes disparity map
-void make_disparity_map(uchar* out, const uchar* left, const uchar* left_mean, const uchar* right,
-                        const uchar* right_mean, int cols, int window_size, int d_first,
+void make_disparity_map(uchar* out, const detail::DataView& left_view,
+                        const detail::DataView& left_mean_view, const detail::DataView& right_view,
+                        const detail::DataView& right_mean_view, int cols, int k_size, int d_first,
                         int d_last) {
+    // always pick current line for means
+    const uchar* left_mean = left_mean_view.line(0);
+    const uchar* right_mean = right_mean_view.line(0);
+
+    // prepare lines
+    const int center_shift = (k_size - 1) / 2;
+    const uchar* left[stereo_common::MAX_WINDOW] = {};
+    const uchar* right[stereo_common::MAX_WINDOW] = {};
+    for (int i = 0; i < k_size; ++i) {
+        left[i] = left_view.line(i - center_shift);
+        right[i] = right_view.line(i - center_shift);
+    }
+
+    // run zncc for current line
     int best_disparity = 0;
     for (int idx_j = 0; idx_j < cols; ++idx_j) {
         // find max zncc and corresponding disparity for current pixel:
@@ -177,7 +198,8 @@ void make_disparity_map(uchar* out, const uchar* left, const uchar* left_mean, c
         uchar l_mean = left_mean[idx_j];
         for (int d = d_first; d <= d_last; ++d) {
             uchar r_mean = right_mean[idx_j + d];
-            double v = _kernel_zncc(left, l_mean, right, r_mean, cols, window_size, idx_j, d);
+
+            double v = _kernel_zncc(left, l_mean, right, r_mean, idx_j, k_size, d);
             if (max_zncc < v) {
                 max_zncc = v;
                 best_disparity = d;
@@ -192,24 +214,46 @@ void make_disparity_map(uchar* out, const uchar* left, const uchar* left_mean, c
     }
 }
 
-void cross_check_disparity(uchar* out, const uchar* l2r, const uchar* r2l, int cols,
-                           int disparity) {
+// TODO: debug abs and min
+
+// pseudo-abs with threshold applied
+inline int no_if_abs_thr(int a, int b, int thr) {
+    int v = a - b;
+    // |value| > thr yields:
+    // value > thr OR value < -thr
+    return v > thr || v < -thr;
+}
+
+inline int no_if_min(int a, int b) {
+    int k = (a >= b);
+    return k * b + (1 - k) * a;
+}
+
+void cross_check_disparity(uchar* out, const detail::DataView& l2r_view,
+                           const detail::DataView& r2l_view, int cols, int disparity) {
     const int threshold = disparity / 4;  // TODO: this parameter must be optimized
 
+    // always get the first line
+    const uchar* l2r = l2r_view.line(0);
+    const uchar* r2l = r2l_view.line(0);
+
     for (int j = 0; j < cols; ++j) {
-        int l2r_pixel = l2r[j];
-        int r2l_pixel = r2l[j];
+        const int l2r_pixel = l2r[j];
+        const int r2l_pixel = r2l[j];
 
         if (std::abs(l2r_pixel - r2l_pixel) > threshold) {
-            out[j] = stereo_common::UNKNOWN_DISPARITY;
+            out[j] = std::min(l2r_pixel, r2l_pixel);
         } else {
             out[j] = l2r_pixel;
         }
     }
 }
 
-void fill_occlusions_disparity(uchar* out, const uchar* in, int cols, int disparity) {
+void fill_occlusions_disparity(uchar* out, const detail::DataView& in_view, int cols) {
     // just pick closest non-zero value along current row
+
+    // always get the first line
+    const uchar* in = in_view.line(0);
 
     // TODO: how to gracefully handle [disparity, cols - disparity) interval??
     uchar nearest_intensity = 0;
@@ -218,75 +262,10 @@ void fill_occlusions_disparity(uchar* out, const uchar* in, int cols, int dispar
         if (pixel == stereo_common::UNKNOWN_DISPARITY) {
             out[idx_j] = nearest_intensity;
         } else {
+            out[idx_j] = pixel;
             nearest_intensity = pixel;
         }
     }
-}
-
-////////////////////////////////////////////////////////////////////////////////////////////////////
-// details:
-
-template<typename Signature> struct Kernel;
-template<typename R, typename... Args> struct Kernel<R(Args...)> {
-    using Invokable = R (*)(Args...);
-
-    Kernel(Invokable f, int border) : m_opaque_function(f), m_border(border) {}
-    Kernel(const Kernel&) = default;
-    Kernel(Kernel&&) = default;
-    Kernel& operator=(const Kernel&) = default;
-    Kernel& operator=(Kernel&&) = default;
-    ~Kernel() = default;
-
-    R operator()(Args... args) { return m_opaque_function(args...); }
-    Invokable& get() { return m_opaque_function; }
-
-    int border() const { return m_border; }
-    int max_lines() const { return m_border * 2 + 1; }
-
-private:
-    Invokable m_opaque_function;  // opaque function pointer
-    int m_border = 0;             // border size for opaque function
-};
-
-struct OpaqueKernel {
-    template<typename Type>
-    OpaqueKernel(Type&& var) : m_holder(std::make_unique<Holder<Type>>(std::forward<Type>(var))) {}
-
-    // TODO: fake copy semantics through move
-    OpaqueKernel(const OpaqueKernel& other) : m_holder(other.m_holder->clone()) {}
-    OpaqueKernel(OpaqueKernel&& other) : m_holder(std::move(other.m_holder)) {}
-
-    struct Base {
-        using Ptr = std::unique_ptr<Base>;
-        virtual int border() const = 0;
-        virtual int max_lines() const = 0;
-        virtual Ptr clone() const = 0;
-        virtual ~Base() = default;
-    };
-
-    template<typename Type> struct Holder : Base {
-        Type m_var;
-        Holder(Type var) : m_var(var) {}
-        int border() const override { return m_var.border(); }
-        int max_lines() const override { return m_var.max_lines(); }
-        Base::Ptr clone() const override { return std::make_unique<Holder<Type>>(*this); }
-    };
-
-    int border() const { return m_holder->border(); }
-    int max_lines() const { return m_holder->max_lines(); }
-
-private:
-    typename Base::Ptr m_holder;
-};
-////////////////////////////////////////////////////////////////////////////////////////////////////
-
-template<typename... Kernels> int max_lpi(Kernels... args) {
-    std::vector<OpaqueKernel> kernels({args...});
-    int max_lines = 0;
-    for (const auto& k : kernels) {
-        max_lines = std::max(max_lines, k.max_lines());
-    }
-    return max_lines;
 }
 
 cv::Mat stereo_compute_disparity(const cv::Mat& left, const cv::Mat& right, int disparity) {
@@ -298,113 +277,137 @@ cv::Mat stereo_compute_disparity(const cv::Mat& left, const cv::Mat& right, int 
     REQUIRE(left.cols == right.cols);
     REQUIRE(disparity <= std::numeric_limits<uchar>::max());
     REQUIRE(left.rows > stereo_common::MAX_BORDER);
+    REQUIRE(left.cols > disparity);
 
+    // many constants here
     const int rows = left.rows;
     const int cols = left.cols;
+    constexpr const int border = stereo_common::MAX_BORDER;
+    constexpr const detail::Border null_border{0, 0};
+    constexpr const detail::Border default_border{border, border};
+    const detail::Border disparity_border{border, border + disparity};
+    constexpr const int lpi = 1;
 
-#define BORDER 0
-    // 1. Define all kernels
-#if BORDER
-    auto make_border = Kernel<decltype(copy_make_border)>(copy_make_border, 1);
-#endif
-    // stereo_common::MAX_WINDOW is worst case
-    auto blur = Kernel<decltype(box_blur)>(box_blur, stereo_common::MAX_BORDER);
-    auto get_disp =
-        Kernel<decltype(make_disparity_map)>(make_disparity_map, stereo_common::MAX_BORDER);
-    auto cross_check = Kernel<decltype(cross_check_disparity)>(cross_check_disparity, 0);
-    auto fill_occlusions =
-        Kernel<decltype(fill_occlusions_disparity)>(fill_occlusions_disparity, 0);
+    // define all kernels
+    auto blur = detail::Kernel<decltype(box_blur)>(box_blur, {default_border});
+    auto get_disp = detail::Kernel<decltype(make_disparity_map)>(
+        make_disparity_map, {disparity_border, {0, disparity}, disparity_border, {0, disparity}});
+    auto cross_check = detail::Kernel<decltype(cross_check_disparity)>(cross_check_disparity,
+                                                                       {null_border, null_border});
+    auto fill_occlusions = detail::Kernel<decltype(fill_occlusions_disparity)>(
+        fill_occlusions_disparity, {null_border});
 
-    // 2. find out max number of rows
-    size_t max_rows = max_lpi(
-#if BORDER
-        make_border,
-#endif
-        blur, get_disp, cross_check, fill_occlusions);
-    (void)max_rows;
+    // sanity border checks, can be removed later
+    REQUIRE(get_disp.border(0) == get_disp.border(2) && get_disp.border(1) == get_disp.border(3));
+    REQUIRE(cross_check.border(0) == null_border && cross_check.border(1) == null_border);
+    REQUIRE(fill_occlusions.border(0) == null_border);
 
-    // 3. run pipeline
-    cv::Mat out = cv::Mat::zeros(left.size(), left.type());
+    // run pipeline
+    cv::Mat out = cv::Mat::zeros(left.size(), CV_8UC1);
 
-    // TODO: on each iteration, do copy_make_border(column_border) [but not rows!]
-
-    // TODO: remove +disparity here, it's awful
-    cv::Mat bordered_left =
-        copy_make_border(left, stereo_common::MAX_BORDER, stereo_common::MAX_BORDER + disparity);
-    cv::Mat bordered_right =
-        copy_make_border(right, stereo_common::MAX_BORDER, stereo_common::MAX_BORDER + disparity);
-    const int border_shift = stereo_common::MAX_BORDER + disparity;
-
-    // TODO: probably shouldn't go through all the rows here?
-    for (int r = 0; r < rows; ++r)
-    // for single row...
-    {
+    for (int r = 0; r < rows; r += lpi) {
         // a. get mean images:
-        cv::Mat left_mean, right_mean;
+        cv::Mat left_mean, right_mean;  // outputs
         {
-            // TODO: real max lines here is multiplication of all successor max_lines()??
-            left_mean = cv::Mat::zeros(cv::Size(cols, get_disp.max_lines()), CV_8UC1);
-            for (int line = 0; line < get_disp.max_lines(); ++line) {
-                const int in_shift = (line + r) * (cols + border_shift) + border_shift;
-                blur(left_mean.data + line * cols, bordered_left.data + in_shift, cols,
-                     stereo_common::MAX_WINDOW);
-            }
-            left_mean = copy_make_border(left_mean, 0, disparity);
+            // 1. extend inputs with borders
+            auto blur_border = blur.border(0);
+            cv::Mat bordered_left = copy_make_border(left, blur_border);  // TODO: can use less rows
+            cv::Mat bordered_right = copy_make_border(right, blur_border);
 
-            right_mean = cv::Mat::zeros(cv::Size(cols, get_disp.max_lines()), CV_8UC1);
-            for (int line = 0; line < get_disp.max_lines(); ++line) {
-                const int in_shift = (line + r) * (cols + border_shift) + border_shift;
-                blur(right_mean.data + line * cols, bordered_right.data + in_shift, cols,
-                     stereo_common::MAX_WINDOW);
+            // 2. create input views
+            detail::DataView left_view(bordered_left, blur_border);
+            detail::DataView right_view(bordered_right, blur_border);
+
+            // 3. create outputs
+            left_mean = cv::Mat::zeros(cv::Size(cols, lpi), CV_8UC1);
+            right_mean = cv::Mat::zeros(cv::Size(cols, lpi), CV_8UC1);
+
+            // 4. run kernels
+            for (int line = 0; line < lpi; ++line) {
+                left_view.adjust(line + r);   // adjust to current line
+                right_view.adjust(line + r);  // adjust to current line
+
+                blur(left_mean.data + line * cols, left_view, cols, stereo_common::MAX_WINDOW);
+
+                blur(right_mean.data + line * cols, right_view, cols, stereo_common::MAX_WINDOW);
             }
-            right_mean = copy_make_border(right_mean, 0, disparity);
         }
 
         // b. get disparity maps
         cv::Mat map_l2r, map_r2l;
         {
-            map_l2r = cv::Mat::zeros(cv::Size(cols, cross_check.max_lines()), CV_8UC1);
-            for (int line = 0; line < cross_check.max_lines(); ++line) {
-                const int in_shift = (line + r) * (cols + border_shift) + border_shift;
-                const int in_mean_shift = (line + r) * (cols + disparity) + disparity;
+            // 1. extend inputs with borders
+            cv::Mat bordered_left = copy_make_border(left, get_disp.border(0));
+            cv::Mat bordered_left_mean = copy_make_border(left_mean, get_disp.border(1));
+            cv::Mat bordered_right = copy_make_border(right, get_disp.border(2));
+            cv::Mat bordered_right_mean = copy_make_border(right_mean, get_disp.border(3));
 
-                get_disp(map_l2r.data + line * cols, left.data + in_shift,
-                         left_mean.data + in_mean_shift, right.data + in_shift,
-                         right_mean.data + in_mean_shift, cols, stereo_common::MAX_WINDOW,
-                         -disparity, 0);
+            // 2. create input views
+            detail::DataView left_view(bordered_left, get_disp.border(0));
+            detail::DataView left_mean_view(bordered_left_mean, get_disp.border(1));
+            detail::DataView right_view(bordered_right, get_disp.border(2));
+            detail::DataView right_mean_view(bordered_right_mean, get_disp.border(3));
+
+            // 3. create outputs
+            map_l2r = cv::Mat::zeros(cv::Size(cols, lpi), CV_8UC1);
+            map_r2l = cv::Mat::zeros(cv::Size(cols, lpi), CV_8UC1);
+
+            // 4. run kernels
+            for (int line = 0; line < lpi; ++line) {
+                left_view.adjust(line + r);    // adjust to current line
+                left_mean_view.adjust(line);   // adjust to current line
+                right_view.adjust(line + r);   // adjust to current line
+                right_mean_view.adjust(line);  // adjust to current line
+
+                get_disp(map_l2r.data + line * cols, left_view, left_mean_view, right_view,
+                         right_mean_view, cols, stereo_common::MAX_WINDOW, -disparity, 0);
+
+                get_disp(map_r2l.data + line * cols, right_view, right_mean_view, left_view,
+                         left_mean_view, cols, stereo_common::MAX_WINDOW, 0, disparity);
             }
-            // map_l2r = copy_make_border(map_l2r, 0, cross_check.border());
-
-            map_r2l = cv::Mat::zeros(cv::Size(cols, cross_check.max_lines()), CV_8UC1);
-            for (int line = 0; line < cross_check.max_lines(); ++line) {
-                const int in_shift = (line + r) * (cols + border_shift) + border_shift;
-                const int in_mean_shift = (line + r) * (cols + disparity) + disparity;
-
-                get_disp(map_r2l.data + line * cols, right.data + in_shift,
-                         right_mean.data + in_mean_shift, left.data + in_shift,
-                         left_mean.data + in_mean_shift, cols, stereo_common::MAX_WINDOW, 0,
-                         disparity);
-            }
-            // map_r2l = copy_make_border(map_r2l, 0, cross_check.border());
         }
 
         // c. cross check
         cv::Mat cross_checked;
         {
-            cross_checked = cv::Mat::zeros(cv::Size(cols, fill_occlusions.max_lines()), CV_8UC1);
-            for (int line = 0; line < fill_occlusions.max_lines(); ++line) {
-                const int in_shift = (line + r) * cols;
+            // 1. extend inputs with borders - not needed here, border always {0, 0}
+            cv::Mat bordered_map_l2r = map_l2r;
+            cv::Mat bordered_map_r2l = map_r2l;
 
-                cross_check(cross_checked.data + line * cols, map_l2r.data + in_shift,
-                            map_r2l.data + in_shift, cols, disparity);
+            // 2. create input views
+            detail::DataView map_l2r_view(bordered_map_l2r, cross_check.border(0));
+            detail::DataView map_r2l_view(bordered_map_r2l, cross_check.border(1));
+
+            // 3. create outputs
+            cross_checked = cv::Mat::zeros(cv::Size(cols, lpi), CV_8UC1);
+
+            // 4. run kernels
+            for (int line = 0; line < lpi; ++line) {
+                map_l2r_view.adjust(line);  // adjust to current line
+                map_r2l_view.adjust(line);  // adjust to current line
+
+                cross_check(cross_checked.data + line * cols, map_l2r_view, map_r2l_view, cols,
+                            disparity);
             }
-            // cross_checked = copy_make_border(cross_checked, 0, fill_occlusions.border());
         }
 
         // d. fill occlusions
+        cv::Mat filled;
         {
-            const int in_shift = r * cols;
-            fill_occlusions(out.data + r * cols, cross_checked.data + in_shift, cols, disparity);
+            // 1. extend inputs with borders - not needed here, border always {0, 0}
+            cv::Mat bordered_cross_checked = cross_checked;
+
+            // 2. create input views
+            detail::DataView cross_checked_view(bordered_cross_checked, cross_check.border(0));
+
+            // 3. create outputs - in this case it's just the output
+            filled = out;
+
+            for (int line = 0; line < lpi; ++line) {
+                cross_checked_view.adjust(line);  // adjust to current line
+
+                fill_occlusions(filled.data + (line + r) * cols, cross_checked_view, cols);
+            }
         }
     }
 

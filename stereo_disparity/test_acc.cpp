@@ -152,7 +152,7 @@ void declare_tests() {
             cv::Mat left_img = cv::imread(folder + "im0.png");
             cv::Mat right_img = cv::imread(folder + "im1.png");
 
-            cv::Size resize_to(16, 6);  // resized down for increased speed
+            cv::Size resize_to(100, 100);  // resized down for increased speed
             {
                 cv::resize(left_img, left_img, resize_to);
                 cv::resize(right_img, right_img, resize_to);
@@ -163,7 +163,7 @@ void declare_tests() {
             cv::cvtColor(right_img, right, cv::COLOR_BGR2GRAY);
 
             // test code:
-            int max_disp = 5;
+            int max_disp = 50;
             cv::Mat base_disp, opt_disp;
 
             base_disp = stereo_cpp_base::stereo_compute_disparity(left, right, max_disp);
@@ -171,9 +171,6 @@ void declare_tests() {
 
             REQUIRE(base_disp.type() == opt_disp.type());
             REQUIRE(base_disp.size() == opt_disp.size());
-
-            PRINTLN(base_disp);
-            PRINTLN(opt_disp);
 
             REQUIRE(cv::countNonZero(base_disp != opt_disp) == 0);
         }

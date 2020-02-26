@@ -30,7 +30,7 @@ cv::Mat make_disparity_map(const cv::Mat& left, const cv::Mat& left_mean, const 
 // cross-checks 2 disparity maps
 void cross_check_disparity(cv::Mat& l2r, const cv::Mat& r2l, int disparity);
 // fills occlusions in disparity map inplace
-void fill_occlusions_disparity(cv::Mat& data, int k_size, int disparity);
+void fill_occlusions_disparity(cv::Mat& data, int disparity);
 
 // List of kernels:
 
@@ -40,7 +40,7 @@ uchar _kernel_box_blur(const uchar* in, int idx_i, int idx_j, int rows, int cols
 double _kernel_zncc(const uchar* left, uchar l_mean, const uchar* right, uchar r_mean, int rows,
                     int cols, int k_size, int idx_i, int idx_j, int d);
 // fill occlusions in a row
-void _kernel_fill_occlusions_disparity(uchar* data, int idx_i, int cols, int k_size, int disparity);
+void _kernel_fill_occlusions_disparity(uchar* data, int idx_i, int cols, int disparity);
 
 std::pair<cv::Mat, cv::Mat> stereo_compute_disparities_impl(const cv::Mat& left,
                                                             const cv::Mat& right, int window_size,
@@ -79,7 +79,7 @@ cv::Mat stereo_compute_disparity(const cv::Mat& left, const cv::Mat& right, int 
 
     // 2. post process:
     cross_check_disparity(map_l2r, map_r2l, disparity);
-    fill_occlusions_disparity(map_l2r, stereo_common::MAX_WINDOW, disparity);
+    fill_occlusions_disparity(map_l2r, disparity);
 
     return map_l2r;
 }
@@ -139,18 +139,18 @@ void cross_check_disparity(cv::Mat& l2r, const cv::Mat& r2l, int disparity) {
             int r2l_pixel = r2l.at<uchar>(i, j);
 
             if (std::abs(l2r_pixel - r2l_pixel) > threshold) {
-                l2r.at<uchar>(i, j) = stereo_common::UNKNOWN_DISPARITY;
+                l2r.at<uchar>(i, j) = std::min(l2r_pixel, r2l_pixel);
             }
         }
     }
 }
 
-void fill_occlusions_disparity(cv::Mat& data, int k_size, int disparity) {
+void fill_occlusions_disparity(cv::Mat& data, int disparity) {
     const int rows = data.rows, cols = data.cols;
     for (int idx_i = 0; idx_i < rows; ++idx_i) {
         // TODO: any better strategy? (e.g. run only for known indices, do not go through the
         //       whole matrix)
-        _kernel_fill_occlusions_disparity(data.data, idx_i, cols, k_size, disparity);
+        _kernel_fill_occlusions_disparity(data.data, idx_i, cols, disparity);
     }
 }
 
@@ -202,8 +202,7 @@ double _kernel_zncc(const uchar* left, uchar l_mean, const uchar* right, uchar r
     return double(sum) / (std_left * std_right);
 }
 
-void _kernel_fill_occlusions_disparity(uchar* data, int idx_i, int cols, int k_size,
-                                       int disparity) {
+void _kernel_fill_occlusions_disparity(uchar* data, int idx_i, int cols, int disparity) {
     // just pick closest non-zero value along current row
 
     // TODO: how to gracefully handle [disparity, cols - disparity) interval??
