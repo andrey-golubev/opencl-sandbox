@@ -96,6 +96,30 @@ void declare_tests() {
             }
         }
     };
+    TEST(COPY_LINE_BORDER_OPT) {
+        const cv::Size TEST_SIZES_MIN_16[] = {cv::Size(1920, 1080), cv::Size(640, 480),
+                                              cv::Size(189, 279), cv::Size(16, 16)};
+        for (const auto& size : TEST_SIZES_MIN_16) {
+            cv::Mat in(size, CV_8UC1);
+            cv::randu(in, cv::Scalar(0), cv::Scalar(255));
+
+            cv::Mat ocv;
+
+            for (int y_shift : {0, 1, 2, 3, 4, 5}) {
+                for (int height_shift : {0, 1, 2, 3, 4, 5}) {
+                    for (int c_border : {0, 1, 2, 3, 4, 5}) {
+                        detail::HorSlice slice{y_shift, size.height - height_shift - y_shift};
+                        cv::Rect roi(0, slice.y, size.width, slice.height);
+                        ocv = in(roi);
+                        cv::copyMakeBorder(ocv, ocv, 0, 0, c_border, c_border,
+                                           cv::BORDER_REFLECT101);
+                        cv::Mat cpp = stereo_cpp_opt::copy_line_border(in, slice, c_border);
+                        REQUIRE(cv::countNonZero(ocv != cpp) == 0);
+                    }
+                }
+            }
+        }
+    };
     TEST(DISPARITY_MAP_SANITY) {
 #define SHOW 0
 #if SHOW

@@ -111,6 +111,27 @@ cv::Mat copy_make_border(const cv::Mat& in, int row_border, int col_border) {
     return out;
 }
 
+// idea apply ROI to input, then copy with column border only
+cv::Mat copy_line_border(const cv::Mat& in, detail::HorSlice slice, int col_border) {
+    REQUIRE(in.type() == CV_8UC1);
+    const int cols = in.cols;
+    REQUIRE(slice.y >= 0);
+    REQUIRE(slice.y + slice.height <= in.rows);
+    REQUIRE(cols > col_border);
+    REQUIRE(cols >= UINT8_NLANES);  // FIXME?
+
+    cv::Mat out = cv::Mat::zeros(cv::Size(cols + col_border * 2, slice.height), in.type());
+
+    // copy input rows
+    for (int i = slice.y; i < slice.height + slice.y; ++i) {
+        const uchar* in_row = (in.data + i * cols);
+        uchar* out_row = (out.data + (i - slice.y) * (cols + col_border * 2));
+        _kernel_copy_make_border(in_row, out_row, cols, col_border);
+    }
+
+    return out;
+}
+
 cv::Mat copy_make_border(const cv::Mat& in, detail::Border b) {
     return copy_make_border(in, b.row_border, b.col_border);
 }
