@@ -11,6 +11,12 @@ struct Border {
     int row_border = 0;
     int col_border = 0;
 };
+// usage model: [y, y + height)
+struct HorSlice {
+    int y = 0;
+    int height = 0;
+};
+
 bool operator==(Border a, Border b) {
     return a.row_border == b.row_border && a.col_border == b.col_border;
 }
