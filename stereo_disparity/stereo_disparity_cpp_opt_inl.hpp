@@ -76,14 +76,14 @@ void _kernel_copy_make_border(const uchar* in_row, uchar* out_row, int cols, int
     }
 }
 
-cv::Mat copy_make_border(const cv::Mat& in, int row_border, int col_border) {
+void copy_make_border(cv::Mat& out, const cv::Mat& in, int row_border, int col_border) {
     REQUIRE(in.type() == CV_8UC1);
     const int rows = in.rows, cols = in.cols;
     REQUIRE(rows > row_border);
     REQUIRE(cols > col_border);
     REQUIRE(cols >= UINT8_NLANES);  // FIXME?
-
-    cv::Mat out = cv::Mat::zeros(cv::Size(cols + col_border * 2, rows + row_border * 2), in.type());
+    REQUIRE(out.rows == rows + row_border * 2);
+    REQUIRE(out.cols == cols + col_border * 2);
 
     // copy input rows
     for (int i = 0; i < rows; ++i) {
@@ -107,11 +107,40 @@ cv::Mat copy_make_border(const cv::Mat& in, int row_border, int col_border) {
             _kernel_copy_make_border(in_row, out_row, cols, col_border);
         }
     }
+}
 
+cv::Mat copy_make_border(const cv::Mat& in, int row_border, int col_border) {
+    REQUIRE(in.type() == CV_8UC1);
+    const int rows = in.rows, cols = in.cols;
+    REQUIRE(rows > row_border);
+    REQUIRE(cols > col_border);
+    REQUIRE(cols >= UINT8_NLANES);  // FIXME?
+
+    cv::Mat out = cv::Mat::zeros(cv::Size(cols + col_border * 2, rows + row_border * 2), in.type());
+    copy_make_border(out, in, row_border, col_border);
     return out;
 }
 
 // idea apply ROI to input, then copy with column border only
+void copy_line_border(cv::Mat& out, const cv::Mat& in, detail::HorSlice slice, int col_border) {
+    // TOOD: remove requires from this version? (make it unsafe)
+    const int cols = in.cols;
+    REQUIRE(in.type() == CV_8UC1);
+    REQUIRE(slice.y >= 0);
+    REQUIRE(slice.y + slice.height <= in.rows);
+    REQUIRE(cols > col_border);
+    REQUIRE(cols >= UINT8_NLANES);  // FIXME?
+    REQUIRE(out.rows == slice.height);
+    REQUIRE(out.cols == cols + col_border * 2);
+
+    // copy input rows
+    for (int i = slice.y; i < slice.height + slice.y; ++i) {
+        const uchar* in_row = (in.data + i * cols);
+        uchar* out_row = (out.data + (i - slice.y) * (cols + col_border * 2));
+        _kernel_copy_make_border(in_row, out_row, cols, col_border);
+    }
+}
+
 cv::Mat copy_line_border(const cv::Mat& in, detail::HorSlice slice, int col_border) {
     REQUIRE(in.type() == CV_8UC1);
     const int cols = in.cols;
@@ -122,12 +151,7 @@ cv::Mat copy_line_border(const cv::Mat& in, detail::HorSlice slice, int col_bord
 
     cv::Mat out = cv::Mat::zeros(cv::Size(cols + col_border * 2, slice.height), in.type());
 
-    // copy input rows
-    for (int i = slice.y; i < slice.height + slice.y; ++i) {
-        const uchar* in_row = (in.data + i * cols);
-        uchar* out_row = (out.data + (i - slice.y) * (cols + col_border * 2));
-        _kernel_copy_make_border(in_row, out_row, cols, col_border);
-    }
+    copy_line_border(out, in, slice, col_border);
 
     return out;
 }
