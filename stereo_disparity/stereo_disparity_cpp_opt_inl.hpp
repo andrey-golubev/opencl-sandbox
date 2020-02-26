@@ -323,6 +323,10 @@ cv::Mat stereo_compute_disparity(const cv::Mat& left, const cv::Mat& right, int 
     REQUIRE(cross_check.border(0) == null_border && cross_check.border(1) == null_border);
     REQUIRE(fill_occlusions.border(0) == null_border);
 
+    // extend inputs with row borders
+    cv::Mat in_left = copy_make_border(left, border, 0);
+    cv::Mat in_right = copy_make_border(right, border, 0);
+
     // run pipeline
     cv::Mat out = cv::Mat::zeros(left.size(), CV_8UC1);
 
@@ -332,8 +336,9 @@ cv::Mat stereo_compute_disparity(const cv::Mat& left, const cv::Mat& right, int 
         {
             // 1. extend inputs with borders
             auto blur_border = blur.border(0);
-            cv::Mat bordered_left = copy_make_border(left, blur_border);  // TODO: can use less rows
-            cv::Mat bordered_right = copy_make_border(right, blur_border);
+            detail::HorSlice slice{r, lpi + border * 2};
+            cv::Mat bordered_left = copy_line_border(in_left, slice, blur_border.col_border);
+            cv::Mat bordered_right = copy_line_border(in_right, slice, blur_border.col_border);
 
             // 2. create input views
             detail::DataView left_view(bordered_left, blur_border);
@@ -345,8 +350,8 @@ cv::Mat stereo_compute_disparity(const cv::Mat& left, const cv::Mat& right, int 
 
             // 4. run kernels
             for (int line = 0; line < lpi; ++line) {
-                left_view.adjust(line + r);   // adjust to current line
-                right_view.adjust(line + r);  // adjust to current line
+                left_view.adjust(line);   // adjust to current line
+                right_view.adjust(line);  // adjust to current line
 
                 blur(left_mean.data + line * cols, left_view, cols, stereo_common::MAX_WINDOW);
 
@@ -358,9 +363,11 @@ cv::Mat stereo_compute_disparity(const cv::Mat& left, const cv::Mat& right, int 
         cv::Mat map_l2r, map_r2l;
         {
             // 1. extend inputs with borders
-            cv::Mat bordered_left = copy_make_border(left, get_disp.border(0));
+            detail::HorSlice slice{r, lpi + border * 2};
+            cv::Mat bordered_left = copy_line_border(in_left, slice, get_disp.border(0).col_border);
             cv::Mat bordered_left_mean = copy_make_border(left_mean, get_disp.border(1));
-            cv::Mat bordered_right = copy_make_border(right, get_disp.border(2));
+            cv::Mat bordered_right =
+                copy_line_border(in_right, slice, get_disp.border(2).col_border);
             cv::Mat bordered_right_mean = copy_make_border(right_mean, get_disp.border(3));
 
             // 2. create input views
@@ -375,9 +382,9 @@ cv::Mat stereo_compute_disparity(const cv::Mat& left, const cv::Mat& right, int 
 
             // 4. run kernels
             for (int line = 0; line < lpi; ++line) {
-                left_view.adjust(line + r);    // adjust to current line
+                left_view.adjust(line);        // adjust to current line
                 left_mean_view.adjust(line);   // adjust to current line
-                right_view.adjust(line + r);   // adjust to current line
+                right_view.adjust(line);       // adjust to current line
                 right_mean_view.adjust(line);  // adjust to current line
 
                 get_disp(map_l2r.data + line * cols, left_view, left_mean_view, right_view,

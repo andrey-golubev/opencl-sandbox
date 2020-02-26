@@ -153,7 +153,7 @@ void declare_tests() {
 #else
             int max_disp = 50;
 #endif
-            cpp_disp = stereo_cpp_base::stereo_compute_disparity(left, right, max_disp);
+            cpp_disp = stereo_cpp_opt::stereo_compute_disparity(left, right, max_disp);
 
             cv::Mat zero = cv::Mat::zeros(cpp_disp.size(), cpp_disp.type());
 
