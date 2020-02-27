@@ -134,7 +134,7 @@ void declare_tests() {
 #if SHOW
             cv::Size resize_to(640, 480);  // resized down for increased speed
 #else
-            cv::Size resize_to(100, 100);  // resized down for increased speed
+            cv::Size resize_to(160, 120);  // resized down for increased speed
 #endif
             {
                 cv::resize(left_img, left_img, resize_to);

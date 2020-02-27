@@ -328,6 +328,7 @@ cv::Mat stereo_compute_disparity(const cv::Mat& left, const cv::Mat& right, int 
     const int rows = left.rows;
     const int cols = left.cols;
     constexpr const int border = stereo_common::MAX_BORDER;
+    constexpr const int window = border * 2 + 1;
     constexpr const detail::Border null_border{0, 0};
     constexpr const detail::Border default_border{border, border};
     const detail::Border disparity_border{border, border + disparity};
@@ -347,118 +348,138 @@ cv::Mat stereo_compute_disparity(const cv::Mat& left, const cv::Mat& right, int 
     REQUIRE(cross_check.border(0) == null_border && cross_check.border(1) == null_border);
     REQUIRE(fill_occlusions.border(0) == null_border);
 
-    // extend inputs with row borders
+    // extend inputs with row borders - required for correct reflection handling
     cv::Mat in_left = copy_make_border(left, border, 0);
     cv::Mat in_right = copy_make_border(right, border, 0);
-
-    // run pipeline
+    // allocate output
     cv::Mat out = cv::Mat::zeros(left.size(), CV_8UC1);
 
+    // create kernel data - allocate inputs/outputs
+    const cv::Size line_size(cols, lpi);
+    detail::KernelData blur_data_left(detail::in_sizes(line_size, blur), blur.borders(),
+                                      {line_size});
+    detail::KernelData blur_data_right(detail::in_sizes(line_size, blur), blur.borders(),
+                                       {line_size});
+    // can use the same disp_data for 2 kernels, but need 2 outputs now (L2R and R2L)
+    detail::KernelData disp_data(detail::in_sizes(line_size, get_disp), get_disp.borders(),
+                                 {line_size, line_size});
+    detail::KernelData cross_check_data(detail::in_sizes(line_size, cross_check),
+                                        cross_check.borders(), {line_size});
+    // fill occlusions writes directly to output
+    detail::KernelData fill_occlusions_data(detail::in_sizes(line_size, fill_occlusions),
+                                            fill_occlusions.borders(), std::vector<cv::Mat>{out});
+    REQUIRE(out.data == fill_occlusions_data.out_data(0));
+
+    // run pipeline
     for (int r = 0; r < rows; r += lpi) {
-        // a. get mean images:
+        const detail::HorSlice slice{r, lpi + border * 2};  // input slice to use in this iteration
+
+        // 1. get mean images:
         cv::Mat left_mean, right_mean;  // outputs
         {
-            // 1. extend inputs with borders
-            auto blur_border = blur.border(0);
-            detail::HorSlice slice{r, lpi + border * 2};
-            cv::Mat bordered_left = copy_line_border(in_left, slice, blur_border.col_border);
-            cv::Mat bordered_right = copy_line_border(in_right, slice, blur_border.col_border);
+            // update inputs
+            blur_data_left.update_src(0, [&](cv::Mat& out, detail::Border border) {
+                copy_line_border(out, in_left, slice, border.col_border);
+            });
+            blur_data_right.update_src(0, [&](cv::Mat& out, detail::Border border) {
+                copy_line_border(out, in_right, slice, border.col_border);
+            });
 
-            // 2. create input views
-            detail::DataView left_view(bordered_left, blur_border);
-            detail::DataView right_view(bordered_right, blur_border);
+            // re-assign outputs
+            left_mean = blur_data_left.out_mat(0);
+            right_mean = blur_data_right.out_mat(0);
 
-            // 3. create outputs
-            left_mean = cv::Mat::zeros(cv::Size(cols, lpi), CV_8UC1);
-            right_mean = cv::Mat::zeros(cv::Size(cols, lpi), CV_8UC1);
-
-            // 4. run kernels
+            // run kernels
             for (int line = 0; line < lpi; ++line) {
-                left_view.adjust(line);   // adjust to current line
-                right_view.adjust(line);  // adjust to current line
+                blur_data_left.adjust(line);  // adjust to current line
+                blur(left_mean.data + line * cols, blur_data_left.in_view(0), cols, window);
 
-                blur(left_mean.data + line * cols, left_view, cols, stereo_common::MAX_WINDOW);
-
-                blur(right_mean.data + line * cols, right_view, cols, stereo_common::MAX_WINDOW);
+                blur_data_right.adjust(line);  // adjust to current line
+                blur(right_mean.data + line * cols, blur_data_right.in_view(0), cols, window);
             }
         }
 
-        // b. get disparity maps
+        // 2. get disparity maps
         cv::Mat map_l2r, map_r2l;
         {
-            // 1. extend inputs with borders
-            detail::HorSlice slice{r, lpi + border * 2};
-            cv::Mat bordered_left = copy_line_border(in_left, slice, get_disp.border(0).col_border);
-            cv::Mat bordered_left_mean = copy_make_border(left_mean, get_disp.border(1));
-            cv::Mat bordered_right =
-                copy_line_border(in_right, slice, get_disp.border(2).col_border);
-            cv::Mat bordered_right_mean = copy_make_border(right_mean, get_disp.border(3));
+            // update inputs
+            disp_data.update_src(0, [&](cv::Mat& out, detail::Border border) {
+                copy_line_border(out, in_left, slice, border.col_border);
+            });
+            disp_data.update_src(1, [&](cv::Mat& out, detail::Border border) {
+                copy_make_border(out, left_mean, border.row_border, border.col_border);
+            });
+            disp_data.update_src(2, [&](cv::Mat& out, detail::Border border) {
+                copy_line_border(out, in_right, slice, border.col_border);
+            });
+            disp_data.update_src(3, [&](cv::Mat& out, detail::Border border) {
+                copy_make_border(out, right_mean, border.row_border, border.col_border);
+            });
 
-            // 2. create input views
-            detail::DataView left_view(bordered_left, get_disp.border(0));
-            detail::DataView left_mean_view(bordered_left_mean, get_disp.border(1));
-            detail::DataView right_view(bordered_right, get_disp.border(2));
-            detail::DataView right_mean_view(bordered_right_mean, get_disp.border(3));
+            // extract views
+            auto& left_view = disp_data.in_view(0);
+            auto& left_mean_view = disp_data.in_view(1);
+            auto& right_view = disp_data.in_view(2);
+            auto& right_mean_view = disp_data.in_view(3);
 
-            // 3. create outputs
-            map_l2r = cv::Mat::zeros(cv::Size(cols, lpi), CV_8UC1);
-            map_r2l = cv::Mat::zeros(cv::Size(cols, lpi), CV_8UC1);
+            // re-assign outputs
+            map_l2r = disp_data.out_mat(0);
+            map_r2l = disp_data.out_mat(1);
 
-            // 4. run kernels
+            // run kernels
             for (int line = 0; line < lpi; ++line) {
-                left_view.adjust(line);        // adjust to current line
-                left_mean_view.adjust(line);   // adjust to current line
-                right_view.adjust(line);       // adjust to current line
-                right_mean_view.adjust(line);  // adjust to current line
+                disp_data.adjust(line);  // adjust to current line
 
                 get_disp(map_l2r.data + line * cols, left_view, left_mean_view, right_view,
-                         right_mean_view, cols, stereo_common::MAX_WINDOW, -disparity, 0);
+                         right_mean_view, cols, window, -disparity, 0);
 
                 get_disp(map_r2l.data + line * cols, right_view, right_mean_view, left_view,
-                         left_mean_view, cols, stereo_common::MAX_WINDOW, 0, disparity);
+                         left_mean_view, cols, window, 0, disparity);
             }
         }
 
-        // c. cross check
+        // 3. cross check
         cv::Mat cross_checked;
         {
-            // 1. extend inputs with borders - not needed here, border always {0, 0}
-            cv::Mat bordered_map_l2r = map_l2r;
-            cv::Mat bordered_map_r2l = map_r2l;
+            // update inputs
+            cross_check_data.update_view(0, [&](detail::DataView& view) {
+                view = detail::DataView(map_l2r, null_border);  // update view instead of inputs
+            });
+            cross_check_data.update_view(1, [&](detail::DataView& view) {
+                view = detail::DataView(map_r2l, null_border);  // update view instead of inputs
+            });
 
-            // 2. create input views
-            detail::DataView map_l2r_view(bordered_map_l2r, cross_check.border(0));
-            detail::DataView map_r2l_view(bordered_map_r2l, cross_check.border(1));
+            // extract views
+            auto& map_l2r_view = cross_check_data.in_view(0);
+            auto& map_r2l_view = cross_check_data.in_view(1);
 
-            // 3. create outputs
-            cross_checked = cv::Mat::zeros(cv::Size(cols, lpi), CV_8UC1);
+            // re-assign outputs
+            cross_checked = cross_check_data.out_mat(0);
 
-            // 4. run kernels
+            // run kernels
             for (int line = 0; line < lpi; ++line) {
-                map_l2r_view.adjust(line);  // adjust to current line
-                map_r2l_view.adjust(line);  // adjust to current line
+                cross_check_data.adjust(line);  // adjust to current line
 
                 cross_check(cross_checked.data + line * cols, map_l2r_view, map_r2l_view, cols,
                             disparity);
             }
         }
 
-        // d. fill occlusions
-        cv::Mat filled;
+        // 4. fill occlusions
         {
-            // 1. extend inputs with borders - not needed here, border always {0, 0}
-            cv::Mat bordered_cross_checked = cross_checked;
+            // update inputs
+            fill_occlusions_data.update_view(0, [&](detail::DataView& view) {
+                view = detail::DataView(cross_checked, null_border);
+            });
 
-            // 2. create input views
-            detail::DataView cross_checked_view(bordered_cross_checked, cross_check.border(0));
+            // access output
+            auto data = fill_occlusions_data.out_data(0);
 
-            // 3. create outputs - in this case it's just the output
-            filled = out;
-
+            // run kernels
             for (int line = 0; line < lpi; ++line) {
-                cross_checked_view.adjust(line);  // adjust to current line
+                fill_occlusions_data.adjust(line);  // adjust to current line
 
-                fill_occlusions(filled.data + (line + r) * cols, cross_checked_view, cols);
+                fill_occlusions(data + (line + r) * cols, fill_occlusions_data.in_view(0), cols);
             }
         }
     }

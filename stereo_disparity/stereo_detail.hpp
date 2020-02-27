@@ -36,6 +36,7 @@ template<typename R, typename... Args> struct Kernel<R(Args...)> {
     Invokable& get() { return m_opaque_function; }
 
     Border border(int i) const { return m_borders.at(i); }
+    const std::vector<Border>& borders() const { return m_borders; }
 
 private:
     Invokable m_opaque_function;         // opaque function pointer
@@ -53,6 +54,7 @@ struct OpaqueKernel {
     struct Base {
         using Ptr = std::unique_ptr<Base>;
         virtual Border border(int i) const = 0;
+        virtual const std::vector<Border>& borders() const = 0;
         virtual Ptr clone() const = 0;
         virtual ~Base() = default;
     };
@@ -61,10 +63,12 @@ struct OpaqueKernel {
         Type m_var;
         Holder(Type var) : m_var(var) {}
         Border border(int i) const override { return m_var.border(i); }
+        const std::vector<Border>& borders() const override { return m_var.borders(); }
         Base::Ptr clone() const override { return std::make_unique<Holder<Type>>(*this); }
     };
 
     Border border(int i) const { return m_holder->border(i); }
+    const std::vector<Border>& borders() const { return m_holder->borders(); }
 
 private:
     typename Base::Ptr m_holder;
@@ -83,10 +87,70 @@ struct DataView {
         return m_data.data + real_index * m_data.cols + m_border.col_border;
     }
     void adjust(int index) { m_curr_index = index; }
+    Border border() const { return m_border; }
+
+    cv::Mat& data() { return m_data; }
 
 private:
     Border m_border = {};
     int m_curr_index = 0;
     cv::Mat m_data;
 };
+
+struct KernelData {
+    KernelData(const std::vector<cv::Size>& in_sizes, const std::vector<Border>& borders,
+               const std::vector<cv::Size>& out_sizes) {
+        const auto size = in_sizes.size();
+        REQUIRE(size == borders.size());
+
+        // populate inputs and views
+        m_inputs.reserve(size);
+        for (size_t i = 0; i < size; ++i) {
+            m_inputs.emplace_back(cv::Mat::zeros(in_sizes[i], CV_8UC1), borders[i]);
+        }
+
+        const auto out_size = out_sizes.size();
+        m_outputs.reserve(out_size);
+        for (size_t i = 0; i < out_size; ++i) {
+            m_outputs.emplace_back(cv::Mat::zeros(out_sizes[i], CV_8UC1));
+        }
+    }
+
+    KernelData(const std::vector<cv::Size>& in_sizes, const std::vector<Border>& borders,
+               const std::vector<cv::Mat>& outs)
+        : KernelData(in_sizes, borders, std::vector<cv::Size>{}) {
+        m_outputs = outs;
+    }
+
+    DataView& in_view(int index) { return m_inputs[index]; }
+    uchar* out_data(int index) { return m_outputs[index].data; }
+    cv::Mat& out_mat(int index) { return m_outputs[index]; }
+
+    void adjust(int index) {
+        // adjust all views by the same index
+        for (auto& view : m_inputs) {
+            view.adjust(index);
+        }
+    }
+
+    template<typename Updater> void update_src(int index, Updater f) {
+        f(m_inputs[index].data(), m_inputs[index].border());
+    }
+
+    template<typename Updater> void update_view(int index, Updater f) { f(m_inputs[index]); }
+
+private:
+    std::vector<DataView> m_inputs = {};  // views for inputs
+    std::vector<cv::Mat> m_outputs = {};
+};
+
+template<typename Kernel> std::vector<cv::Size> in_sizes(cv::Size input_size, const Kernel& k) {
+    OpaqueKernel opaque(k);
+    std::vector<cv::Size> sizes;
+    for (const auto& border : opaque.borders()) {
+        sizes.emplace_back(input_size.width + border.col_border * 2,
+                           input_size.height + border.row_border * 2);
+    }
+    return sizes;
+}
 }  // namespace detail
