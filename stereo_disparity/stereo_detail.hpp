@@ -97,18 +97,19 @@ private:
     cv::Mat m_data;
 };
 
+// TODO: this class is getting very gross with many different ownership models - better design?
 struct KernelData {
-    KernelData(const std::vector<cv::Size>& in_sizes, const std::vector<Border>& borders,
-               const std::vector<cv::Size>& out_sizes) {
-        const auto size = in_sizes.size();
-        REQUIRE(size == borders.size());
+    // create kernel data with empty inputs (real inputs are not owned by kernel data)
+    KernelData(const std::vector<Border>& borders, const std::vector<cv::Size>& out_sizes) {
+        const auto size = borders.size();
 
-        // populate inputs and views
+        // allocate inputs
         m_inputs.reserve(size);
         for (size_t i = 0; i < size; ++i) {
-            m_inputs.emplace_back(cv::Mat::zeros(in_sizes[i], CV_8UC1), borders[i]);
+            m_inputs.emplace_back(cv::Mat(), borders[i]);
         }
 
+        // allocate outputs
         const auto out_size = out_sizes.size();
         m_outputs.reserve(out_size);
         for (size_t i = 0; i < out_size; ++i) {
@@ -116,9 +117,29 @@ struct KernelData {
         }
     }
 
+    // create default kernel data with ownership over inputs and outputs
+    KernelData(const std::vector<cv::Size>& in_sizes, const std::vector<Border>& borders,
+               const std::vector<cv::Size>& out_sizes)
+        : KernelData(borders, out_sizes) {
+        const auto size = in_sizes.size();
+        REQUIRE(size == borders.size());
+
+        // create real inputs on top of pre-allocated views
+        for (size_t i = 0; i < size; ++i) {
+            m_inputs[i].data() = cv::Mat::zeros(in_sizes[i], CV_8UC1);
+        }
+    }
+
+    // create kernel data with no ownership over outputs
     KernelData(const std::vector<cv::Size>& in_sizes, const std::vector<Border>& borders,
                const std::vector<cv::Mat>& outs)
         : KernelData(in_sizes, borders, std::vector<cv::Size>{}) {
+        m_outputs = outs;
+    }
+
+    // create kernel data with no ownership over inputs and outputs (mere "view" over kernel data)
+    KernelData(const std::vector<Border>& borders, const std::vector<cv::Mat>& outs)
+        : KernelData(borders, std::vector<cv::Size>{}) {
         m_outputs = outs;
     }
 

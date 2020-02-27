@@ -363,11 +363,10 @@ cv::Mat stereo_compute_disparity(const cv::Mat& left, const cv::Mat& right, int 
     // can use the same disp_data for 2 kernels, but need 2 outputs now (L2R and R2L)
     detail::KernelData disp_data(detail::in_sizes(line_size, get_disp), get_disp.borders(),
                                  {line_size, line_size});
-    detail::KernelData cross_check_data(detail::in_sizes(line_size, cross_check),
-                                        cross_check.borders(), {line_size});
-    // fill occlusions writes directly to output
-    detail::KernelData fill_occlusions_data(detail::in_sizes(line_size, fill_occlusions),
-                                            fill_occlusions.borders(), std::vector<cv::Mat>{out});
+    // cross check reads disparity maps directly
+    detail::KernelData cross_check_data(cross_check.borders(), {line_size});
+    // fill occlusions reads cross check and writes to output directly
+    detail::KernelData fill_occlusions_data(fill_occlusions.borders(), std::vector<cv::Mat>{out});
     REQUIRE(out.data == fill_occlusions_data.out_data(0));
 
     // run pipeline
