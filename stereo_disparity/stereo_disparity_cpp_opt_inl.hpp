@@ -121,6 +121,23 @@ cv::Mat copy_make_border(const cv::Mat& in, int row_border, int col_border) {
     return out;
 }
 
+void copy(cv::Mat& out, const cv::Mat& in, int row_border, int col_border) {
+    REQUIRE(in.type() == CV_8UC1);
+    const int rows = in.rows, cols = in.cols;
+    REQUIRE(rows > row_border);
+    REQUIRE(cols > col_border);
+    REQUIRE(cols >= UINT8_NLANES);  // FIXME?
+    REQUIRE(out.rows == rows + row_border * 2);
+    REQUIRE(out.cols == cols + col_border * 2);
+
+    // copy input rows
+    for (int i = 0; i < rows; ++i) {
+        const uchar* in_row = (in.data + i * cols);
+        uchar* out_row = (out.data + (i + row_border) * (cols + col_border * 2)) + col_border;
+        _kernel_copy(in_row, out_row, cols);
+    }
+}
+
 // idea apply ROI to input, then copy with column border only
 void copy_line_border(cv::Mat& out, const cv::Mat& in, detail::HorSlice slice, int col_border) {
     // TOOD: remove requires from this version? (make it unsafe)
@@ -216,6 +233,117 @@ double _kernel_zncc(const uchar* left[], uchar l_mean, const uchar* right[], uch
     return double(sum) / (std_left * std_right);
 }
 
+// assume input already bordered by k_size
+template<typename InType = uchar, typename KType = uchar, typename OutType = int>
+void convolve(OutType* out, const InType* in, int rows, int cols, const KType* kernel, int k_size,
+              int step = 1) {
+    const int border = (k_size - 1) / 2;
+
+    const KType* k[stereo_common::MAX_WINDOW] = {};
+    for (int ki = 0; ki < k_size; ++ki) {
+        k[ki] = kernel + ki * k_size;
+    }
+
+    const InType* data_start = in + border * (cols + border * 2) + border;
+
+    for (int i = 0, oi = 0; i < rows; i += step, oi++) {
+
+        const InType* lines[stereo_common::MAX_WINDOW] = {};
+        for (int ki = 0; ki < k_size; ++ki) {
+            lines[ki] = data_start + (i + ki - border) * (cols + border * 2);
+        }
+
+        for (int j = 0, oj = 0; j < cols; j += step, oj++) {
+
+            OutType sum = 0;
+            for (int ki = 0; ki < k_size; ++ki) {
+                for (int kj = 0; kj < k_size; ++kj) {
+                    sum += lines[ki][j + kj - border] * k[ki][kj];
+                }
+            }
+
+            out[oi * cols + oj] = sum;
+        }
+    }
+}
+
+cv::Mat mat_conv(const cv::Mat& in, const cv::Mat& kernel, int step) {
+    const int k_size = kernel.rows;
+    REQUIRE(k_size == kernel.cols);
+    const int border = (k_size - 1) / 2;
+
+    // use zero-pad
+    cv::Mat bordered_in =
+        cv::Mat::zeros(cv::Size(in.cols + border * 2, in.rows + border * 2), in.type());
+    copy(bordered_in, in, border, border);
+
+    cv::Mat out = cv::Mat::zeros(in.size(), CV_32SC1);
+
+    convolve((int*)out.data, bordered_in.data, in.rows, in.cols, kernel.data, k_size, step);
+
+    return out;
+}
+
+// sets partial matrix required for zncc
+void _set_partial_matrix(int* out, const uchar* in[], uchar mean, int idx, int k_size) {
+    const int center_shift = (k_size - 1) / 2;
+    for (int i = 0; i < k_size; ++i) {
+        for (int j = 0; j < k_size; ++j) {
+            out[i * k_size + j] = int(in[i][idx + j - center_shift]) - int(mean);
+        }
+    }
+}
+
+double _compute_std_dev(const int* partial_matrix, int k_size) {
+    // compute sum of squares via convolution
+    double std_dev = 0.;
+    convolve(&std_dev, partial_matrix, 1, 1, partial_matrix, k_size);
+    // ensure STD DEV >= EPS (otherwise we get Inf)
+    std_dev = std::max(std::sqrt(std_dev), stereo_common::EPS);
+    return std_dev;
+}
+
+int _compute_sum(const int* left_matrix, const int* right_matrix, int k_size) {
+    // compute sum as convolution of 2 different matrices
+    int sum = 0;
+    convolve(&sum, left_matrix, 1, 1, right_matrix, k_size);
+    return sum;
+}
+
+double _best_disparity(const uchar* left[], const uchar* left_mean, const uchar* right[],
+                       const uchar* right_mean, int idx_j, int k_size, int d_first, int d_last) {
+    // find max zncc and corresponding disparity for current pixel:
+    double max_zncc = -1.0;  // zncc in range [-1, 1]
+    int best_disparity = 0;
+
+    // prepare left matrix
+    uchar l_mean = left_mean[idx_j];
+    int left_matrix[stereo_common::MAX_WINDOW * stereo_common::MAX_WINDOW] = {};
+    _set_partial_matrix(left_matrix, left, l_mean, idx_j, k_size);
+    // compute left std_dev
+    double std_left = _compute_std_dev(left_matrix, k_size);
+
+    int right_matrix[stereo_common::MAX_WINDOW * stereo_common::MAX_WINDOW] = {};
+    for (int d = d_first; d <= d_last; ++d) {
+        // prepare right matrix
+        uchar r_mean = right_mean[idx_j + d];
+        _set_partial_matrix(right_matrix, right, r_mean, idx_j + d, k_size);
+        // compute right std_dev
+        double std_right = _compute_std_dev(right_matrix, k_size);
+
+        // compute sum in zncc formula
+        int sum = _compute_sum(left_matrix, right_matrix, k_size);
+
+        // double v = _kernel_zncc(left, l_mean, right, r_mean, idx_j, k_size, d);
+        double v = (double)sum / (std_left * std_right);
+        if (max_zncc < v) {
+            max_zncc = v;
+            best_disparity = d;
+        }
+    }
+    return best_disparity;
+}
+
 // makes disparity map
 void make_disparity_map(uchar* out, const detail::DataView& left_view,
                         const detail::DataView& left_mean_view, const detail::DataView& right_view,
@@ -235,22 +363,9 @@ void make_disparity_map(uchar* out, const detail::DataView& left_view,
     }
 
     // run zncc for current line
-    int best_disparity = 0;
     for (int idx_j = 0; idx_j < cols; ++idx_j) {
-        // find max zncc and corresponding disparity for current pixel:
-        double max_zncc = -1.0;  // zncc in range [-1, 1]
-
-        uchar l_mean = left_mean[idx_j];
-        for (int d = d_first; d <= d_last; ++d) {
-            uchar r_mean = right_mean[idx_j + d];
-
-            double v = _kernel_zncc(left, l_mean, right, r_mean, idx_j, k_size, d);
-            if (max_zncc < v) {
-                max_zncc = v;
-                best_disparity = d;
-            }
-        }
-
+        int best_disparity =
+            _best_disparity(left, left_mean, right, right_mean, idx_j, k_size, d_first, d_last);
         // store absolute value of disparity
         out[idx_j] = std::abs(best_disparity);
     }

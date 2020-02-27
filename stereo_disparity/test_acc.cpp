@@ -76,11 +76,36 @@ void declare_tests() {
             }
         }
     };
+    TEST(CONVOLVE) {
+        const cv::Size sizes[] = {
+            cv::Size(1920, 1080), cv::Size(640, 480), cv::Size(189, 279),
+            cv::Size(16, 16),     cv::Size(200, 5),
+        };
+        for (const auto& size : sizes) {
+            cv::Mat in(size, CV_8UC1);
+            cv::randu(in, cv::Scalar(0), cv::Scalar(255));
+
+            for (int k_size : {3, 5, 9}) {
+                cv::Mat kernel = cv::Mat::zeros(cv::Size(k_size, k_size), CV_8UC1);
+                cv::randu(kernel, cv::Scalar::all(0), cv::Scalar::all(10));
+                cv::Mat float_kernel;
+                kernel.convertTo(float_kernel, CV_32FC1);
+
+                cv::Mat ocv_tmp, cpp;
+                cv::filter2D(in, ocv_tmp, CV_32FC1, float_kernel, cv::Point(-1, -1), 0.0,
+                             cv::BORDER_CONSTANT);
+                cv::Mat ocv;
+                ocv_tmp.convertTo(ocv, CV_32SC1);
+
+                cpp = stereo_cpp_opt::mat_conv(in, kernel, 1);
+                REQUIRE(cv::countNonZero(ocv != cpp) == 0);
+            }
+        }
+    };
     TEST(COPY_MAKE_BORDER_OPT) {
-        const cv::Size TEST_SIZES_MIN_16[] = {cv::Size(1920, 1080), cv::Size(640, 480),
-                                              cv::Size(189, 279), cv::Size(16, 16),
-                                              cv::Size(200, 6)};
-        for (const auto& size : TEST_SIZES_MIN_16) {
+        const cv::Size sizes[] = {cv::Size(1920, 1080), cv::Size(640, 480), cv::Size(189, 279),
+                                  cv::Size(16, 16), cv::Size(200, 6)};
+        for (const auto& size : sizes) {
             cv::Mat in(size, CV_8UC1);
             cv::randu(in, cv::Scalar(0), cv::Scalar(255));
 
@@ -97,9 +122,9 @@ void declare_tests() {
         }
     };
     TEST(COPY_LINE_BORDER_OPT) {
-        const cv::Size TEST_SIZES_MIN_16[] = {cv::Size(1920, 1080), cv::Size(640, 480),
-                                              cv::Size(189, 279), cv::Size(16, 16)};
-        for (const auto& size : TEST_SIZES_MIN_16) {
+        const cv::Size sizes[] = {cv::Size(1920, 1080), cv::Size(640, 480), cv::Size(189, 279),
+                                  cv::Size(16, 16)};
+        for (const auto& size : sizes) {
             cv::Mat in(size, CV_8UC1);
             cv::randu(in, cv::Scalar(0), cv::Scalar(255));
 

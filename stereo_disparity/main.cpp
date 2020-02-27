@@ -30,8 +30,8 @@ std::vector<std::basic_string<CharT>> split(const std::basic_string<CharT>& src,
 }  // namespace
 
 // debug controls
-#define OPTIMIZED 0
-#define SHOW_WINDOW 1
+#define OPTIMIZED 1
+#define SHOW_WINDOW 0
 
 int main(int argc, char* argv[]) {
     if (argc < 3) {
