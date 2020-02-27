@@ -52,14 +52,14 @@ constexpr const int UINT8_NLANES = cv::v_uint8::nlanes;  // SIMD specific consta
 void _kernel_copy(const uchar* in, uchar* out, int cols) {
     int l = 0;
     for (; l <= cols - UINT8_NLANES; l += UINT8_NLANES) {
-        cv::v_uint8x16 p = cv::v_load(&in[l]);
+        cv::v_uint8 p = cv::v_load(&in[l]);
         cv::v_store(&out[l], p);
     }
 
     // tail:
     if (l < cols) {
         l = cols - UINT8_NLANES;
-        cv::v_uint8x16 p = cv::v_load(&in[l]);
+        cv::v_uint8 p = cv::v_load(&in[l]);
         cv::v_store(&out[l], p);
     }
 }
@@ -267,6 +267,19 @@ void convolve(OutType* out, const InType* in, int rows, int cols, const KType* k
     }
 }
 
+// special case of convolution where we know that input and kernel are single lines of the same size
+// Note: output is a single value
+template<typename InType = uchar, typename KType = uchar, typename OutType = int>
+void line_convolve(OutType& out, const InType* in, const KType* kernel, int k_size) {
+    const int length = k_size * k_size;
+    OutType sum(0);
+    // rely on compiler's auto-vectorization:
+    for (int l = 0; l < length; ++l) {
+        sum += in[l] * kernel[l];
+    }
+    out = sum;
+}
+
 cv::Mat mat_conv(const cv::Mat& in, const cv::Mat& kernel, int step) {
     const int k_size = kernel.rows;
     REQUIRE(k_size == kernel.cols);
@@ -297,7 +310,7 @@ void _set_partial_matrix(int* out, const uchar* in[], uchar mean, int idx, int k
 double _compute_std_dev(const int* partial_matrix, int k_size) {
     // compute sum of squares via convolution
     double std_dev = 0.;
-    convolve(&std_dev, partial_matrix, 1, 1, partial_matrix, k_size);
+    line_convolve(std_dev, partial_matrix, partial_matrix, k_size);  // use special case
     // ensure STD DEV >= EPS (otherwise we get Inf)
     std_dev = std::max(std::sqrt(std_dev), stereo_common::EPS);
     return std_dev;
@@ -306,7 +319,7 @@ double _compute_std_dev(const int* partial_matrix, int k_size) {
 int _compute_sum(const int* left_matrix, const int* right_matrix, int k_size) {
     // compute sum as convolution of 2 different matrices
     int sum = 0;
-    convolve(&sum, left_matrix, 1, 1, right_matrix, k_size);
+    line_convolve(sum, left_matrix, right_matrix, k_size);  // use special case
     return sum;
 }
 
