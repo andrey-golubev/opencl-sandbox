@@ -315,14 +315,34 @@ void fill_occlusions_disparity(uchar* out, const detail::DataView& in_view, int 
 
 cv::Mat _internal_stereo_compute_disparity(cv::Mat& out, const cv::Mat& in_left,
                                            const cv::Mat& in_right, detail::HorSlice global_slice,
-                                           int cols, int disparity) {
+                                           int rows, int cols, int disparity) {
     // many constants here
     constexpr const int border = stereo_common::MAX_BORDER;
     constexpr const int window = border * 2 + 1;
     constexpr const detail::Border null_border{0, 0};
     constexpr const detail::Border default_border{border, border};
     const detail::Border disparity_border{border, border + disparity};
-    constexpr const int lpi = 1;
+
+    // TODO: look at lpi issues
+    // find good lpi
+    auto find_good_lpi = [](int rows) {
+        // const int lpis[] = {16, 10, 8, 4, 2};
+        // for (int lpi : lpis) {
+        //     if (rows < lpi) {
+        //         continue;
+        //     }
+        //     if (rows % lpi == 0) {
+        //         return lpi;
+        //     }
+        // }
+        return 1;
+    };
+    // address lpi > slice rows
+    int lpi = std::min(find_good_lpi(rows), global_slice.height + global_slice.y);
+    // if we cannot maintain lpi for current slice, use lpi = 1
+    if ((global_slice.height + global_slice.y) % lpi != 0) {
+        lpi = 1;
+    }
 
     // define all kernels
     auto blur = detail::Kernel<decltype(box_blur)>(box_blur, {default_border});
@@ -512,7 +532,7 @@ cv::Mat stereo_compute_disparity(const cv::Mat& left, const cv::Mat& right, int 
         }
 
         detail::HorSlice patch{slice_y, lines_per_thread};  // process some patch in this thread
-        _internal_stereo_compute_disparity(out, in_left, in_right, patch, cols, disparity);
+        _internal_stereo_compute_disparity(out, in_left, in_right, patch, rows, cols, disparity);
     });
 
     return out;
