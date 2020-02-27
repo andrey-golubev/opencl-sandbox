@@ -402,18 +402,19 @@ cv::Mat stereo_compute_disparity(const cv::Mat& left, const cv::Mat& right, int 
         cv::Mat map_l2r, map_r2l;
         {
             // update inputs
-            disp_data.update_src(0, [&](cv::Mat& out, detail::Border border) {
-                copy_line_border(out, in_left, slice, border.col_border);
-            });
-            disp_data.update_src(1, [&](cv::Mat& out, detail::Border border) {
-                copy_make_border(out, left_mean, border.row_border, border.col_border);
-            });
-            disp_data.update_src(2, [&](cv::Mat& out, detail::Border border) {
-                copy_line_border(out, in_right, slice, border.col_border);
-            });
-            disp_data.update_src(3, [&](cv::Mat& out, detail::Border border) {
-                copy_make_border(out, right_mean, border.row_border, border.col_border);
-            });
+            disp_data.update_src<0, 1, 2, 3>(
+                [&](cv::Mat& out, detail::Border border) {
+                    copy_line_border(out, in_left, slice, border.col_border);
+                },
+                [&](cv::Mat& out, detail::Border border) {
+                    copy_make_border(out, left_mean, border.row_border, border.col_border);
+                },
+                [&](cv::Mat& out, detail::Border border) {
+                    copy_line_border(out, in_right, slice, border.col_border);
+                },
+                [&](cv::Mat& out, detail::Border border) {
+                    copy_make_border(out, right_mean, border.row_border, border.col_border);
+                });
 
             // extract views
             auto& left_view = disp_data.in_view(0);
@@ -441,12 +442,9 @@ cv::Mat stereo_compute_disparity(const cv::Mat& left, const cv::Mat& right, int 
         cv::Mat cross_checked;
         {
             // update inputs
-            cross_check_data.update_view(0, [&](detail::DataView& view) {
-                view = detail::DataView(map_l2r, null_border);  // update view instead of inputs
-            });
-            cross_check_data.update_view(1, [&](detail::DataView& view) {
-                view = detail::DataView(map_r2l, null_border);  // update view instead of inputs
-            });
+            cross_check_data.update_view<0, 1>(
+                [&](detail::DataView& view) { view = detail::DataView(map_l2r, null_border); },
+                [&](detail::DataView& view) { view = detail::DataView(map_r2l, null_border); });
 
             // extract views
             auto& map_l2r_view = cross_check_data.in_view(0);

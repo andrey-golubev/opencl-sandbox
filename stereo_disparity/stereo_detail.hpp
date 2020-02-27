@@ -157,8 +157,20 @@ struct KernelData {
     template<typename Updater> void update_src(int index, Updater f) {
         f(m_inputs[index].data(), m_inputs[index].border());
     }
+    template<int Index, typename Updater> void update_src(Updater f) { update_src(Index, f); }
+    template<int Index, int... Indices, typename Updater, typename... Updaters>
+    void update_src(Updater f, Updaters... fs) {
+        update_src<Index>(f);
+        update_src<Indices...>(fs...);
+    }
 
     template<typename Updater> void update_view(int index, Updater f) { f(m_inputs[index]); }
+    template<int Index, typename Updater> void update_view(Updater f) { update_view(Index, f); }
+    template<int Index, int... Indices, typename Updater, typename... Updaters>
+    void update_view(Updater f, Updaters... fs) {
+        update_view<Index>(f);
+        update_view<Indices...>(fs...);
+    }
 
 private:
     std::vector<DataView> m_inputs = {};  // views for inputs
