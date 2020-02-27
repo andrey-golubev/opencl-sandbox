@@ -249,9 +249,6 @@ void make_disparity_map(uchar* out, const detail::DataView& left_view,
                 max_zncc = v;
                 best_disparity = d;
             }
-            if (max_zncc >= stereo_common::ZNCC_THRESHOLD) {
-                break;
-            }
         }
 
         // store absolute value of disparity

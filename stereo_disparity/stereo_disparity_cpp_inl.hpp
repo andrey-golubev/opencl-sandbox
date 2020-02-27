@@ -107,9 +107,6 @@ cv::Mat make_disparity_map(const cv::Mat& left, const cv::Mat& left_mean, const 
                     max_zncc = v;
                     best_disparity = d;
                 }
-                if (max_zncc >= stereo_common::ZNCC_THRESHOLD) {
-                    break;
-                }
             }
 
             // store absolute value of disparity
