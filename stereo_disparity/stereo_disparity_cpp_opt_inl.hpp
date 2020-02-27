@@ -313,20 +313,10 @@ void fill_occlusions_disparity(uchar* out, const detail::DataView& in_view, int 
     }
 }
 
-cv::Mat stereo_compute_disparity(const cv::Mat& left, const cv::Mat& right, int disparity) {
-    // sanity checks:
-    REQUIRE(left.type() == CV_8UC1);
-    REQUIRE(left.type() == right.type());
-    REQUIRE(left.dims == 2);
-    REQUIRE(left.rows == right.rows);
-    REQUIRE(left.cols == right.cols);
-    REQUIRE(disparity <= std::numeric_limits<uchar>::max());
-    REQUIRE(left.rows > stereo_common::MAX_BORDER);
-    REQUIRE(left.cols > disparity);
-
+cv::Mat _internal_stereo_compute_disparity(cv::Mat& out, const cv::Mat& in_left,
+                                           const cv::Mat& in_right, detail::HorSlice global_slice,
+                                           int cols, int disparity) {
     // many constants here
-    const int rows = left.rows;
-    const int cols = left.cols;
     constexpr const int border = stereo_common::MAX_BORDER;
     constexpr const int window = border * 2 + 1;
     constexpr const detail::Border null_border{0, 0};
@@ -348,12 +338,6 @@ cv::Mat stereo_compute_disparity(const cv::Mat& left, const cv::Mat& right, int 
     REQUIRE(cross_check.border(0) == null_border && cross_check.border(1) == null_border);
     REQUIRE(fill_occlusions.border(0) == null_border);
 
-    // extend inputs with row borders - required for correct reflection handling
-    cv::Mat in_left = copy_make_border(left, border, 0);
-    cv::Mat in_right = copy_make_border(right, border, 0);
-    // allocate output
-    cv::Mat out = cv::Mat::zeros(left.size(), CV_8UC1);
-
     // create kernel data - allocate inputs/outputs
     const cv::Size line_size(cols, lpi);
     detail::KernelData blur_data_left(detail::in_sizes(line_size, blur), blur.borders(),
@@ -369,8 +353,8 @@ cv::Mat stereo_compute_disparity(const cv::Mat& left, const cv::Mat& right, int 
     detail::KernelData fill_occlusions_data(fill_occlusions.borders(), std::vector<cv::Mat>{out});
     REQUIRE(out.data == fill_occlusions_data.out_data(0));
 
-    // run pipeline
-    for (int r = 0; r < rows; r += lpi) {
+    // run pipeline only for global slice
+    for (int r = global_slice.y; r < global_slice.height + global_slice.y; r += lpi) {
         const detail::HorSlice slice{r, lpi + border * 2};  // input slice to use in this iteration
 
         // 1. get mean images:
@@ -480,6 +464,56 @@ cv::Mat stereo_compute_disparity(const cv::Mat& left, const cv::Mat& right, int 
             }
         }
     }
+
+    return out;
+}
+
+// interface method:
+cv::Mat stereo_compute_disparity(const cv::Mat& left, const cv::Mat& right, int disparity) {
+    const int rows = left.rows;
+    const int cols = left.cols;
+    constexpr const int border = stereo_common::MAX_BORDER;
+
+    // sanity checks:
+    REQUIRE(left.type() == CV_8UC1);
+    REQUIRE(left.type() == right.type());
+    REQUIRE(left.dims == 2);
+    REQUIRE(left.rows == right.rows);
+    REQUIRE(left.cols == right.cols);
+    REQUIRE(disparity <= std::numeric_limits<uchar>::max());
+    REQUIRE(left.rows > stereo_common::MAX_BORDER);
+    REQUIRE(left.cols > disparity);
+
+    // if there are not enough rows < max threads, just parallelize each row
+    const int threads = std::min(thr::get_max_threads(), left.rows);
+
+    // prepare inputs and outputs:
+    // extend inputs with row borders - required for correct reflection handling
+    cv::Mat in_left = copy_make_border(left, border, 0);
+    cv::Mat in_right = copy_make_border(right, border, 0);
+    // allocate output
+    cv::Mat out = cv::Mat::zeros(left.size(), CV_8UC1);
+
+    thr::parallel_for(threads, [&](int slice_n, int total_slices) {
+        int slice_y = 0;
+
+        auto lines_per_thread = rows / total_slices;
+        const auto remainder = rows % total_slices;
+
+        if (slice_n < remainder) {
+            lines_per_thread++;
+            slice_y = slice_n * lines_per_thread;
+        } else {
+            slice_y = remainder * (lines_per_thread + 1) + (slice_n - remainder) * lines_per_thread;
+        }
+
+        if (lines_per_thread <= 0) {
+            return;
+        }
+
+        detail::HorSlice patch{slice_y, lines_per_thread};  // process some patch in this thread
+        _internal_stereo_compute_disparity(out, in_left, in_right, patch, cols, disparity);
+    });
 
     return out;
 }
