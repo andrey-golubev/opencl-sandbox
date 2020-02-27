@@ -10,6 +10,7 @@
 #include "common/utils.hpp"
 
 #include "stereo_disparity_cpp_inl.hpp"
+#include "stereo_disparity_cpp_opt_inl.hpp"
 
 namespace {
 void print_usage(const char* program_name) {
@@ -27,6 +28,10 @@ std::vector<std::basic_string<CharT>> split(const std::basic_string<CharT>& src,
     return dst;
 }
 }  // namespace
+
+// debug controls
+#define OPTIMIZED 0
+#define SHOW_WINDOW 1
 
 int main(int argc, char* argv[]) {
     if (argc < 3) {
@@ -52,14 +57,21 @@ int main(int argc, char* argv[]) {
     cv::cvtColor(bgr_right, right, cv::COLOR_BGR2GRAY);
 
     // find disparity
+#if OPTIMIZED
+    cv::Mat map = stereo_cpp_opt::stereo_compute_disparity(left, right, max_disparity);
+#else
     cv::Mat map = stereo_cpp_base::stereo_compute_disparity(left, right, max_disparity);
+#endif
 
+#if SHOW_WINDOW
     // show disparity map
     cv::String win_name("Disparity Map");
-    cv::namedWindow(win_name);
+    cv::namedWindow(win_name, cv::WINDOW_NORMAL | cv::WINDOW_KEEPRATIO);
+    cv::resizeWindow(win_name, cv::Size(640 * 2, 480 * 2));
     cv::imshow(win_name, map);
     while (cv::waitKey(1) != 27) {
     };
+#endif
 
     return 0;
 }
