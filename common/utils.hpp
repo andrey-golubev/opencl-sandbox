@@ -9,3 +9,5 @@
 #define PRINTLN(s) std::cout << (s) << std::endl;
 
 #define PRINT(s) std::cout << (s);
+
+#define OUT std::cout

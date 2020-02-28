@@ -258,7 +258,7 @@ void convolve(OutType* out, const InType* in, int rows, int cols, const KType* k
             OutType sum = 0;
             for (int ki = 0; ki < k_size; ++ki) {
                 for (int kj = 0; kj < k_size; ++kj) {
-                    sum += lines[ki][j + kj - border] * k[ki][kj];
+                    sum += k[ki][kj] * lines[ki][j + kj - border];
                 }
             }
 
@@ -269,14 +269,49 @@ void convolve(OutType* out, const InType* in, int rows, int cols, const KType* k
 
 // special case of convolution where we know that input and kernel are single lines of the same size
 // Note: output is a single value
-template<typename InType = uchar, typename KType = uchar, typename OutType = int>
-void line_convolve(OutType& out, const InType* in, const KType* kernel, int k_size) {
-    const int length = k_size * k_size;
+template<typename InType, typename KType, typename OutType>
+void line_convolve(OutType& out, const InType* in, const KType* kernel, int length) {
     OutType sum(0);
     // rely on compiler's auto-vectorization:
     for (int l = 0; l < length; ++l) {
         sum += in[l] * kernel[l];
     }
+    out = sum;
+}
+
+template<typename, typename> struct vec_utils;
+template<> struct vec_utils<int, double> {
+    using v_type = cv::v_float32;
+    inline static v_type setzero() { return cv::v_setzero_f32(); }
+    inline static v_type cvt(const cv::v_int32& in) { return cv::v_cvt_f32(in); }
+};
+template<> struct vec_utils<int, int> {
+    using v_type = cv::v_int32;
+    inline static v_type setzero() { return cv::v_setzero_s32(); }
+    inline static v_type cvt(const cv::v_int32& in) { return in; }
+};
+
+// optimized overload of line convolution for known input/kernel types
+template<typename OutType>
+void line_convolve(OutType& out, const int* in, const int* kernel, int length) {
+    constexpr const int int32_nlanes = cv::v_int32::nlanes;
+    using vu = vec_utils<int, OutType>;
+    OutType sum = 0;
+    int l = 0;
+    // vectorized part:
+    if (length >= int32_nlanes) {
+        typename vu::v_type s = vu::setzero();
+        for (; l <= length - int32_nlanes; l += int32_nlanes) {
+            s += vu::cvt(cv::v_load(&in[l]) * cv::v_load(&kernel[l]));
+        }
+        sum = cv::v_reduce_sum(s);
+    }
+
+    // scalar part:
+    for (; l < length; ++l) {
+        sum += in[l] * kernel[l];
+    }
+
     out = sum;
 }
 
@@ -310,7 +345,7 @@ void _set_partial_matrix(int* out, const uchar* in[], uchar mean, int idx, int k
 double _compute_std_dev(const int* partial_matrix, int k_size) {
     // compute sum of squares via convolution
     double std_dev = 0.;
-    line_convolve(std_dev, partial_matrix, partial_matrix, k_size);  // use special case
+    line_convolve(std_dev, partial_matrix, partial_matrix, k_size * k_size);  // special case
     // ensure STD DEV >= EPS (otherwise we get Inf)
     std_dev = std::max(std::sqrt(std_dev), stereo_common::EPS);
     return std_dev;
@@ -319,7 +354,7 @@ double _compute_std_dev(const int* partial_matrix, int k_size) {
 int _compute_sum(const int* left_matrix, const int* right_matrix, int k_size) {
     // compute sum as convolution of 2 different matrices
     int sum = 0;
-    line_convolve(sum, left_matrix, right_matrix, k_size);  // use special case
+    line_convolve(sum, left_matrix, right_matrix, k_size * k_size);  // special case
     return sum;
 }
 
