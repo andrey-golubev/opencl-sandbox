@@ -477,26 +477,20 @@ cv::Mat _internal_stereo_compute_disparity(cv::Mat& out, const cv::Mat& in_left,
     constexpr const detail::Border default_border{border, border};
     const detail::Border disparity_border{border, border + disparity};
 
-    // TODO: look at lpi issues
-    // find good lpi
-    auto find_good_lpi = [](int rows) {
-        // const int lpis[] = {16, 10, 8, 4, 2};
-        // for (int lpi : lpis) {
-        //     if (rows < lpi) {
-        //         continue;
-        //     }
-        //     if (rows % lpi == 0) {
-        //         return lpi;
-        //     }
-        // }
+    auto find_good_lpi = [](int slice_height) {
+        const int lpis[] = {8, 4, 2};
+        for (int lpi : lpis) {
+            if (slice_height < lpi) {
+                continue;
+            }
+            if (slice_height % lpi == 0) {
+                return lpi;
+            }
+        }
         return 1;
     };
     // address lpi > slice rows
-    int lpi = std::min(find_good_lpi(rows), global_slice.height + global_slice.y);
-    // if we cannot maintain lpi for current slice, use lpi = 1
-    if ((global_slice.height + global_slice.y) % lpi != 0) {
-        lpi = 1;
-    }
+    const int lpi = find_good_lpi(global_slice.height);
 
     // define all kernels
     auto blur = detail::Kernel<decltype(box_blur)>(box_blur, {default_border});
