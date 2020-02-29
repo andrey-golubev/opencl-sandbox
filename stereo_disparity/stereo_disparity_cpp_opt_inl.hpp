@@ -359,10 +359,6 @@ void _set_partial_matrix(int* out, const uchar* in[], uchar mean, int idx, int k
                 store_sub(out_line, in_line, l);
             }
 
-            for (; l < k_size; ++l) {
-                out_line[l] = int(in_line[idx + l - center_shift]) - int(mean);
-            }
-
             // handle tail
             if (l < k_size) {
                 l = k_size - int32_nlanes;
