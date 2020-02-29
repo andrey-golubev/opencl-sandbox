@@ -204,35 +204,6 @@ void box_blur(uchar* out, const detail::DataView& in_view, int cols, int k_size)
     }
 }
 
-double _kernel_zncc(const uchar* left[], uchar l_mean, const uchar* right[], uchar r_mean,
-                    int idx_j, int k_size, int d) {
-    const int center_shift = (k_size - 1) / 2;
-
-    int sum = 0;
-    double std_left = 0.0, std_right = 0.0;
-
-    for (int i = 0; i < k_size; ++i) {
-        for (int j = 0; j < k_size; ++j) {
-            const int jj1 = idx_j + j - center_shift;
-            const int jj2 = idx_j + j - center_shift + d;
-
-            const int left_pixel = int(left[i][jj1]) - int(l_mean);
-            const int right_pixel = int(right[i][jj2]) - int(r_mean);
-
-            sum += left_pixel * right_pixel;
-
-            std_left += left_pixel * left_pixel;
-            std_right += right_pixel * right_pixel;
-        }
-    }
-
-    // ensure STD DEV >= EPS (otherwise we get Inf)
-    std_left = std::max(std::sqrt(std_left), stereo_common::EPS);
-    std_right = std::max(std::sqrt(std_right), stereo_common::EPS);
-
-    return double(sum) / (std_left * std_right);
-}
-
 // assume input already bordered by k_size
 template<typename InType = uchar, typename KType = uchar, typename OutType = int>
 void convolve(OutType* out, const InType* in, int rows, int cols, const KType* kernel, int k_size,
@@ -285,6 +256,7 @@ template<> struct vec_utils<int, double> {
     inline static v_type setzero() { return cv::v_setzero_f32(); }
     inline static v_type cvt(const cv::v_int32& in) { return cv::v_cvt_f32(in); }
 };
+template<> struct vec_utils<int, float> : vec_utils<int, double> {};
 template<> struct vec_utils<int, int> {
     using v_type = cv::v_int32;
     inline static v_type setzero() { return cv::v_setzero_s32(); }
@@ -378,11 +350,10 @@ void _set_partial_matrix(int* out, const uchar* in[], uchar mean, int idx, int k
 
 inline double _compute_std_dev(const int* partial_matrix, int k_size) {
     // compute sum of squares via convolution
-    double std_dev = 0.;
+    double std_dev = 0;
     line_convolve(std_dev, partial_matrix, partial_matrix, k_size * k_size);  // special case
     // ensure STD DEV >= EPS (otherwise we get Inf)
-    std_dev = std::max(std::sqrt(std_dev), stereo_common::EPS);
-    return std_dev;
+    return std::max(std::sqrt(std_dev), stereo_common::EPS);
 }
 
 inline int _compute_sum(const int* left_matrix, const int* right_matrix, int k_size) {
@@ -416,7 +387,6 @@ double _best_disparity(const uchar* left[], const uchar* left_mean, const uchar*
         // compute sum in zncc formula
         int sum = _compute_sum(left_matrix, right_matrix, k_size);
 
-        // double v = _kernel_zncc(left, l_mean, right, r_mean, idx_j, k_size, d);
         double v = (double)sum / (std_left * std_right);
         if (max_zncc < v) {
             max_zncc = v;
@@ -453,21 +423,6 @@ void make_disparity_map(uchar* out, const detail::DataView& left_view,
     }
 }
 
-// TODO: debug abs and min
-
-// pseudo-abs with threshold applied
-inline int no_if_abs_thr(int a, int b, int thr) {
-    int v = a - b;
-    // |value| > thr yields:
-    // value > thr OR value < -thr
-    return v > thr || v < -thr;
-}
-
-inline int no_if_min(int a, int b) {
-    int k = (a >= b);
-    return k * b + (1 - k) * a;
-}
-
 void cross_check_disparity(uchar* out, const detail::DataView& l2r_view,
                            const detail::DataView& r2l_view, int cols, int disparity) {
     const int threshold = disparity / 4;  // TODO: this parameter must be optimized
@@ -494,7 +449,6 @@ void fill_occlusions_disparity(uchar* out, const detail::DataView& in_view, int 
     // always get the first line
     const uchar* in = in_view.line(0);
 
-    // TODO: how to gracefully handle [disparity, cols - disparity) interval??
     uchar nearest_intensity = 0;
     for (int idx_j = 0; idx_j < cols; ++idx_j) {
         uchar pixel = in[idx_j];

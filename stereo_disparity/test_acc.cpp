@@ -201,7 +201,7 @@ void declare_tests() {
             cv::Mat left_img = cv::imread(folder + "im0.png");
             cv::Mat right_img = cv::imread(folder + "im1.png");
 
-            cv::Size resize_to(100, 100);  // resized down for increased speed
+            cv::Size resize_to(320, 240);  // resized down for increased speed
             {
                 cv::resize(left_img, left_img, resize_to);
                 cv::resize(right_img, right_img, resize_to);
