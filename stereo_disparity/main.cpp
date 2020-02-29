@@ -57,11 +57,19 @@ int main(int argc, char* argv[]) {
     cv::cvtColor(bgr_right, right, cv::COLOR_BGR2GRAY);
 
     // find disparity
+    cv::Mat map;
+    auto musec =
+        measure(1,
+                [&]() {
 #if OPTIMIZED
-    cv::Mat map = stereo_cpp_opt::stereo_compute_disparity(left, right, max_disparity);
+                    map = stereo_cpp_opt::stereo_compute_disparity(left, right, max_disparity);
 #else
-    cv::Mat map = stereo_cpp_base::stereo_compute_disparity(left, right, max_disparity);
+                    map = stereo_cpp_base::stereo_compute_disparity(left, right, max_disparity);
 #endif
+                },
+                false);
+
+    OUT << "Time: " << musec << " musec" << std::endl;
 
 #if SHOW_WINDOW
     // show disparity map
