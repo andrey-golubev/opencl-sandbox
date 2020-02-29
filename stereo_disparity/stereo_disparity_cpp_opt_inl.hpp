@@ -342,7 +342,7 @@ void _set_partial_matrix(int* out, const uchar* in[], uchar mean, int idx, int k
     }
 }
 
-double _compute_std_dev(const int* partial_matrix, int k_size) {
+inline double _compute_std_dev(const int* partial_matrix, int k_size) {
     // compute sum of squares via convolution
     double std_dev = 0.;
     line_convolve(std_dev, partial_matrix, partial_matrix, k_size * k_size);  // special case
@@ -351,7 +351,7 @@ double _compute_std_dev(const int* partial_matrix, int k_size) {
     return std_dev;
 }
 
-int _compute_sum(const int* left_matrix, const int* right_matrix, int k_size) {
+inline int _compute_sum(const int* left_matrix, const int* right_matrix, int k_size) {
     // compute sum as convolution of 2 different matrices
     int sum = 0;
     line_convolve(sum, left_matrix, right_matrix, k_size * k_size);  // special case
@@ -674,24 +674,26 @@ cv::Mat stereo_compute_disparity(const cv::Mat& left, const cv::Mat& right, int 
     // allocate output
     cv::Mat out = cv::Mat::zeros(left.size(), CV_8UC1);
 
+    // parallelize
     thr::parallel_for(threads, [&](int slice_n, int total_slices) {
-        int slice_y = 0;
+        int y = 0;
 
         auto lines_per_thread = rows / total_slices;
         const auto remainder = rows % total_slices;
 
         if (slice_n < remainder) {
             lines_per_thread++;
-            slice_y = slice_n * lines_per_thread;
+            y = slice_n * lines_per_thread;
         } else {
-            slice_y = remainder * (lines_per_thread + 1) + (slice_n - remainder) * lines_per_thread;
+            y = remainder * (lines_per_thread + 1) + (slice_n - remainder) * lines_per_thread;
         }
 
         if (lines_per_thread <= 0) {
             return;
         }
 
-        detail::HorSlice patch{slice_y, lines_per_thread};  // process some patch in this thread
+        // run algorithm for horizontal image patch
+        detail::HorSlice patch{y, lines_per_thread};  // process some patch in this thread
         _internal_stereo_compute_disparity(out, in_left, in_right, patch, rows, cols, disparity);
     });
 
