@@ -238,55 +238,6 @@ void convolve(OutType* out, const InType* in, int rows, int cols, const KType* k
     }
 }
 
-// special case of convolution where we know that input and kernel are single lines of the same size
-// Note: output is a single value
-template<typename InType, typename KType, typename OutType>
-void line_convolve(OutType& out, const InType* in, const KType* kernel, int length) {
-    OutType sum(0);
-    // rely on compiler's auto-vectorization:
-    for (int l = 0; l < length; ++l) {
-        sum += in[l] * kernel[l];
-    }
-    out = sum;
-}
-
-template<typename, typename> struct vec_utils;
-template<> struct vec_utils<int, double> {
-    using v_type = cv::v_float32;
-    inline static v_type setzero() { return cv::v_setzero_f32(); }
-    inline static v_type cvt(const cv::v_int32& in) { return cv::v_cvt_f32(in); }
-};
-template<> struct vec_utils<int, float> : vec_utils<int, double> {};
-template<> struct vec_utils<int, int> {
-    using v_type = cv::v_int32;
-    inline static v_type setzero() { return cv::v_setzero_s32(); }
-    inline static v_type cvt(const cv::v_int32& in) { return in; }
-};
-
-// optimized overload of line convolution for known input/kernel types
-template<typename OutType>
-void line_convolve(OutType& out, const int* in, const int* kernel, int length) {
-    constexpr const int int32_nlanes = cv::v_int32::nlanes;
-    using vu = vec_utils<int, OutType>;
-    OutType sum = 0;
-    int l = 0;
-    // vectorized part:
-    if (length >= int32_nlanes) {
-        typename vu::v_type s = vu::setzero();
-        for (; l <= length - int32_nlanes; l += int32_nlanes) {
-            s += vu::cvt(cv::v_load(&in[l]) * cv::v_load(&kernel[l]));
-        }
-        sum = cv::v_reduce_sum(s);
-    }
-
-    // scalar part:
-    for (; l < length; ++l) {
-        sum += in[l] * kernel[l];
-    }
-
-    out = sum;
-}
-
 cv::Mat mat_conv(const cv::Mat& in, const cv::Mat& kernel, int step) {
     const int k_size = kernel.rows;
     REQUIRE(k_size == kernel.cols);
@@ -304,20 +255,75 @@ cv::Mat mat_conv(const cv::Mat& in, const cv::Mat& kernel, int step) {
     return out;
 }
 
+template<typename> struct vec_utils;
+template<> struct vec_utils<double> {
+    using v_type = cv::v_float32;
+    inline static v_type setzero() { return cv::v_setzero_f32(); }
+    inline static v_type cvt(const cv::v_int32& in) { return cv::v_cvt_f32(in); }
+};
+template<> struct vec_utils<float> : vec_utils<double> {};
+template<> struct vec_utils<int> {
+    using v_type = cv::v_int32;
+    inline static v_type setzero() { return cv::v_setzero_s32(); }
+    inline static v_type cvt(const cv::v_int32& in) { return in; }
+};
+
+// special case of convolution where we know that input and kernel are single lines of the same size
+// Note: output is a single value
+template<typename InType, typename KType, typename OutType>
+void line_convolve(OutType& out, const InType* in, const KType* kernel, int length) {
+    OutType sum(0);
+    // rely on compiler's auto-vectorization:
+    for (int l = 0; l < length; ++l) {
+        sum += in[l] * kernel[l];
+    }
+    out = sum;
+}
+
+// optimized overload of line convolution for known input/kernel types
+template<typename OutType>
+void line_convolve(OutType& out, const short* in, const short* kernel, int length) {
+    constexpr const int int16_nlanes = cv::v_int16::nlanes;
+    using vu = vec_utils<OutType>;
+    OutType sum = 0;
+    int l = 0;
+    // vectorized part:
+    if (length >= int16_nlanes) {
+        auto mul_promote = [](const cv::v_int16& a, const cv::v_int16& b) {
+            cv::v_int32 a_lo = cv::v_expand_low(a), a_hi = cv::v_expand_high(a);
+            cv::v_int32 b_lo = cv::v_expand_low(b), b_hi = cv::v_expand_high(b);
+            return a_lo * b_lo + a_hi * b_hi;
+        };
+
+        typename vu::v_type s = vu::setzero();
+        for (; l <= length - int16_nlanes; l += int16_nlanes) {
+            s += vu::cvt(mul_promote(cv::v_load(&in[l]), cv::v_load(&kernel[l])));
+        }
+        sum = cv::v_reduce_sum(s);
+    }
+
+    // scalar part:
+    for (; l < length; ++l) {
+        sum += int(in[l]) * int(kernel[l]);
+    }
+
+    out = sum;
+}
+
 // sets partial matrix required for zncc computation
-void _set_partial_matrix(int* out, const uchar* in[], uchar mean, int idx, int k_size) {
-    constexpr const int int32_nlanes = cv::v_int32::nlanes;
+void _set_partial_matrix(short* out, const uchar* in[], uchar mean, int idx, int k_size) {
+    constexpr const int int16_nlanes = cv::v_int16::nlanes;
     const int center_shift = (k_size - 1) / 2;
 
     // vectorized part:
-    if (k_size >= int32_nlanes) {
-        // promote type: uchar -> int
-        const cv::v_int32 mean_v = cv::v_setall_s32(mean);
-        auto store_sub = [&](int* out_line, const uchar* line, int j) {
-            uchar in_line[int32_nlanes] = {};
-            std::memcpy(in_line, line + (idx + j - center_shift), int32_nlanes);
-            // load with expansion: uchar -> int
-            cv::v_int32 in_v = cv::v_reinterpret_as_s32(cv::v_load_expand_q(in_line));
+    if (k_size >= int16_nlanes) {
+        // promote type: uchar -> short
+        const cv::v_int16 mean_v = cv::v_setall_s16(mean);
+        auto store_sub = [&](short* out_line, const uchar* line, int j) {
+            uchar in_line[int16_nlanes] = {};
+            std::memcpy(in_line, line + (idx + j - center_shift), int16_nlanes);
+            // load with expansion: uchar -> short
+            cv::v_int16 in_v = cv::v_reinterpret_as_s16(cv::v_load_expand(in_line));
             cv::v_store(&out_line[j], in_v - mean_v);
         };
 
@@ -325,15 +331,15 @@ void _set_partial_matrix(int* out, const uchar* in[], uchar mean, int idx, int k
         for (int i = 0; i < k_size; ++i) {
             int l = 0;
             const uchar* in_line = in[i];
-            int* out_line = out + i * k_size;
+            short* out_line = out + i * k_size;
             // for each column:
-            for (; l <= k_size - int32_nlanes; l += int32_nlanes) {
+            for (; l <= k_size - int16_nlanes; l += int16_nlanes) {
                 store_sub(out_line, in_line, l);
             }
 
             // handle tail
             if (l < k_size) {
-                l = k_size - int32_nlanes;
+                l = k_size - int16_nlanes;
                 store_sub(out_line, in_line, l);
             }
         }
@@ -343,20 +349,20 @@ void _set_partial_matrix(int* out, const uchar* in[], uchar mean, int idx, int k
     // reference:
     for (int i = 0; i < k_size; ++i) {
         for (int j = 0; j < k_size; ++j) {
-            out[i * k_size + j] = int(in[i][idx + j - center_shift]) - int(mean);
+            out[i * k_size + j] = short(in[i][idx + j - center_shift]) - short(mean);
         }
     }
 }
 
-inline double _compute_std_dev(const int* partial_matrix, int k_size) {
+inline double _compute_std_dev(const short* partial_matrix, int k_size) {
     // compute sum of squares via convolution
-    double std_dev = 0;
+    int std_dev = 0;
     line_convolve(std_dev, partial_matrix, partial_matrix, k_size * k_size);  // special case
     // ensure STD DEV >= EPS (otherwise we get Inf)
-    return std::max(std::sqrt(std_dev), stereo_common::EPS);
+    return std::max(std::sqrt(static_cast<double>(std_dev)), stereo_common::EPS);
 }
 
-inline int _compute_sum(const int* left_matrix, const int* right_matrix, int k_size) {
+inline int _compute_sum(const short* left_matrix, const short* right_matrix, int k_size) {
     // compute sum as convolution of 2 different matrices
     int sum = 0;
     line_convolve(sum, left_matrix, right_matrix, k_size * k_size);  // special case
@@ -371,12 +377,12 @@ double _best_disparity(const uchar* left[], const uchar* left_mean, const uchar*
 
     // prepare left matrix
     uchar l_mean = left_mean[idx_j];
-    int left_matrix[stereo_common::MAX_WINDOW * stereo_common::MAX_WINDOW] = {};
+    short left_matrix[stereo_common::MAX_WINDOW * stereo_common::MAX_WINDOW] = {};
     _set_partial_matrix(left_matrix, left, l_mean, idx_j, k_size);
     // compute left std_dev
     double std_left = _compute_std_dev(left_matrix, k_size);
 
-    int right_matrix[stereo_common::MAX_WINDOW * stereo_common::MAX_WINDOW] = {};
+    short right_matrix[stereo_common::MAX_WINDOW * stereo_common::MAX_WINDOW] = {};
     for (int d = d_first; d <= d_last; ++d) {
         // prepare right matrix
         uchar r_mean = right_mean[idx_j + d];
