@@ -90,6 +90,7 @@ struct DataView {
     Border border() const { return m_border; }
 
     cv::Mat& data() { return m_data; }
+    const cv::Mat& data() const { return m_data; }
 
 private:
     Border m_border = {};
@@ -115,6 +116,7 @@ struct KernelData {
         for (size_t i = 0; i < out_size; ++i) {
             m_outputs.emplace_back(cv::Mat::zeros(out_sizes[i], CV_8UC1));
         }
+        verify_continuous();
     }
 
     // create default kernel data with ownership over inputs and outputs
@@ -128,6 +130,7 @@ struct KernelData {
         for (size_t i = 0; i < size; ++i) {
             m_inputs[i].data() = cv::Mat::zeros(in_sizes[i], CV_8UC1);
         }
+        verify_continuous();
     }
 
     // create kernel data with no ownership over outputs
@@ -135,12 +138,23 @@ struct KernelData {
                const std::vector<cv::Mat>& outs)
         : KernelData(in_sizes, borders, std::vector<cv::Size>{}) {
         m_outputs = outs;
+        verify_continuous();
     }
 
     // create kernel data with no ownership over inputs and outputs (mere "view" over kernel data)
     KernelData(const std::vector<Border>& borders, const std::vector<cv::Mat>& outs)
         : KernelData(borders, std::vector<cv::Size>{}) {
         m_outputs = outs;
+        verify_continuous();
+    }
+
+    void verify_continuous() {
+        for (const auto& view : m_inputs) {
+            REQUIRE(view.data().empty() || view.data().isContinuous());
+        }
+        for (const auto& out : m_outputs) {
+            REQUIRE(out.isContinuous());
+        }
     }
 
     DataView& in_view(int index) { return m_inputs[index]; }

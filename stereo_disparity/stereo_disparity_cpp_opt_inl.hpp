@@ -332,9 +332,47 @@ cv::Mat mat_conv(const cv::Mat& in, const cv::Mat& kernel, int step) {
     return out;
 }
 
-// sets partial matrix required for zncc
+// sets partial matrix required for zncc computation
 void _set_partial_matrix(int* out, const uchar* in[], uchar mean, int idx, int k_size) {
+    constexpr const int int32_nlanes = cv::v_int32::nlanes;
     const int center_shift = (k_size - 1) / 2;
+
+    // vectorized part:
+    if (k_size >= int32_nlanes) {
+        // promote type: uchar -> int
+        const cv::v_int32 mean_v = cv::v_setall_s32(mean);
+        auto store_sub = [&](int* out_line, const uchar* line, int j) {
+            uchar in_line[int32_nlanes] = {};
+            std::memcpy(in_line, line + (idx + j - center_shift), int32_nlanes);
+            // load with expansion: uchar -> int
+            cv::v_int32 in_v = cv::v_reinterpret_as_s32(cv::v_load_expand_q(in_line));
+            cv::v_store(&out_line[j], in_v - mean_v);
+        };
+
+        // for each line: store the line to out buffer with subtracting mean value
+        for (int i = 0; i < k_size; ++i) {
+            int l = 0;
+            const uchar* in_line = in[i];
+            int* out_line = out + i * k_size;
+            // for each column:
+            for (; l <= k_size - int32_nlanes; l += int32_nlanes) {
+                store_sub(out_line, in_line, l);
+            }
+
+            for (; l < k_size; ++l) {
+                out_line[l] = int(in_line[idx + l - center_shift]) - int(mean);
+            }
+
+            // handle tail
+            if (l < k_size) {
+                l = k_size - int32_nlanes;
+                store_sub(out_line, in_line, l);
+            }
+        }
+        return;
+    }
+
+    // reference:
     for (int i = 0; i < k_size; ++i) {
         for (int j = 0; j < k_size; ++j) {
             out[i * k_size + j] = int(in[i][idx + j - center_shift]) - int(mean);
