@@ -40,6 +40,7 @@ enum AlgoType {
 
 // debug controls
 #define SHOW_WINDOW 0
+#define RESIZE 0
 
 int main(int argc, char* argv[]) {
     if (argc < 3 || argc > 5) {
@@ -69,6 +70,14 @@ int main(int argc, char* argv[]) {
     cv::Mat right;
     cv::cvtColor(bgr_left, left, cv::COLOR_BGR2GRAY);
     cv::cvtColor(bgr_right, right, cv::COLOR_BGR2GRAY);
+
+#if RESIZE
+    cv::Mat left_, right_;
+    cv::resize(left, left_, cv::Size(640, 480));
+    cv::resize(right, right_, cv::Size(640, 480));
+    left = left_;
+    right = right_;
+#endif
 
     // find disparity
     cv::Mat map;
