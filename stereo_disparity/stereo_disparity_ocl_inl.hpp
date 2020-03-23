@@ -8,6 +8,7 @@
 #include "common/utils.hpp"
 #include "common_ocl/executor.hpp"
 #include "common_ocl/utils.hpp"
+#include "common_ocl/wrappers.hpp"
 
 #include "stereo_common.hpp"
 
@@ -187,31 +188,31 @@ cv::Mat stereo_compute_disparity(const cv::Mat& left, const cv::Mat& right, int 
     const int rows = left.rows, cols = left.cols;
 
     // allocate input buffers
-    cl_mem l_mem = nullptr;
+    OclMem l_mem;
     OCL_GUARD_RET(l_mem = clCreateBuffer(e.p.context, CL_MEM_READ_ONLY | CL_MEM_USE_HOST_PTR,
                                          memory_size, left.data, &ret));
-    cl_mem r_mem = nullptr;
+    OclMem r_mem;
     OCL_GUARD_RET(r_mem = clCreateBuffer(e.p.context, CL_MEM_READ_ONLY | CL_MEM_USE_HOST_PTR,
                                          memory_size, right.data, &ret));
 
     // allocate intermediate buffers
     // for box blur:
-    cl_mem l_mean_mem = nullptr;
+    OclMem l_mean_mem;
     OCL_GUARD_RET(l_mean_mem =
                       clCreateBuffer(e.p.context, CL_MEM_READ_WRITE, memory_size, nullptr, &ret));
-    cl_mem r_mean_mem = nullptr;
+    OclMem r_mean_mem;
     OCL_GUARD_RET(r_mean_mem =
                       clCreateBuffer(e.p.context, CL_MEM_READ_WRITE, memory_size, nullptr, &ret));
 
     // for disparity:
-    cl_mem map_r2l_mem = nullptr;
+    OclMem map_r2l_mem;
     OCL_GUARD_RET(map_r2l_mem =
                       clCreateBuffer(e.p.context, CL_MEM_READ_WRITE, memory_size, nullptr, &ret));
 
     // allocate output buffers
     cv::Mat map_l2r = cv::Mat::zeros(left.size(), CV_8UC1);
     REQUIRE(memory_size == (map_l2r.total() * map_l2r.elemSize()));
-    cl_mem map_l2r_mem = nullptr;
+    OclMem map_l2r_mem;
     OCL_GUARD_RET(map_l2r_mem = clCreateBuffer(e.p.context, CL_MEM_READ_WRITE | CL_MEM_USE_HOST_PTR,
                                                memory_size, map_l2r.data, &ret));
 
@@ -323,14 +324,6 @@ cv::Mat stereo_compute_disparity(const cv::Mat& left, const cv::Mat& right, int 
     // read output back into this process' memory
     OCL_GUARD_RET(clEnqueueMapBuffer(e.queue, map_l2r_mem, CL_TRUE, CL_MAP_READ, 0, memory_size, 0,
                                      nullptr, nullptr, &ret));
-
-    // release memory objects
-    OCL_GUARD(clReleaseMemObject(map_l2r_mem));
-    OCL_GUARD(clReleaseMemObject(map_r2l_mem));
-    OCL_GUARD(clReleaseMemObject(r_mean_mem));
-    OCL_GUARD(clReleaseMemObject(l_mean_mem));
-    OCL_GUARD(clReleaseMemObject(r_mem));
-    OCL_GUARD(clReleaseMemObject(l_mem));
 
     return map_l2r;
 }
