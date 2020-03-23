@@ -11,10 +11,13 @@
 
 #include "stereo_disparity_cpp_inl.hpp"
 #include "stereo_disparity_cpp_opt_inl.hpp"
+#include "stereo_disparity_ocl_inl.hpp"
 
 namespace {
 void print_usage(const char* program_name) {
-    PRINTLN("Usage: " + std::string(program_name) + " IMAGE_LEFT IMAGE_RIGHT [MAX_DISPARITY]");
+    PRINTLN("Usage: " + std::string(program_name) +
+            " IMAGE_LEFT IMAGE_RIGHT [ALGO_VERSION] [MAX_DISPARITY]\n" +
+            "  ALGO_VERSION:\n  0 - C++ basic\n  1 - C++ optimized\n  2 - OpenCL basic");
 }
 
 template<typename CharT, typename Traits = std::char_traits<CharT>>
@@ -27,14 +30,19 @@ std::vector<std::basic_string<CharT>> split(const std::basic_string<CharT>& src,
     }
     return dst;
 }
+
+enum AlgoType {
+    CPP_BASIC = 0,
+    CPP_OPT = 1,
+    OCL_BASIC = 2,
+};
 }  // namespace
 
 // debug controls
-#define OPTIMIZED 1
 #define SHOW_WINDOW 0
 
 int main(int argc, char* argv[]) {
-    if (argc < 3) {
+    if (argc < 3 || argc > 5) {
         print_usage(argv[0]);
         return 1;
     }
@@ -43,11 +51,17 @@ int main(int argc, char* argv[]) {
     cv::Mat bgr_left = cv::imread(argv[1]);
     cv::Mat bgr_right = cv::imread(argv[2]);
 
+    int algo_version = 0;
     int max_disparity = 50;
 
     // read disparity from user input if specified
     if (argc > 3) {
-        max_disparity = std::stoi(argv[3]);
+        if (argc >= 4) {
+            algo_version = std::stoi(argv[3]);
+        }
+        if (argc == 5) {
+            max_disparity = std::stoi(argv[4]);
+        }
     }
 
     // convert to grayscale
@@ -58,16 +72,35 @@ int main(int argc, char* argv[]) {
 
     // find disparity
     cv::Mat map;
-    auto musec =
-        measure(1,
-                [&]() {
-#if OPTIMIZED
-                    map = stereo_cpp_opt::stereo_compute_disparity(left, right, max_disparity);
-#else
-                    map = stereo_cpp_base::stereo_compute_disparity(left, right, max_disparity);
-#endif
-                },
-                false);
+    uint64_t musec = 0;
+    switch (algo_version) {
+    case CPP_BASIC: {
+        PRINTLN("Running C++ basic version");
+        musec = measure(
+            1,
+            [&]() { map = stereo_cpp_base::stereo_compute_disparity(left, right, max_disparity); },
+            false);
+        break;
+    }
+    case CPP_OPT: {
+        PRINTLN("Running C++ optimized version");
+        musec = measure(
+            1,
+            [&]() { map = stereo_cpp_opt::stereo_compute_disparity(left, right, max_disparity); },
+            false);
+        break;
+    }
+    case OCL_BASIC: {
+        PRINTLN("Running OpenCL basic version");
+        musec = measure(
+            1,
+            [&]() { map = stereo_ocl_base::stereo_compute_disparity(left, right, max_disparity); },
+            false);
+        break;
+    }
+    default:
+        throw std::runtime_error("Unknown algorithm version");
+    }
 
     OUT << "Time: " << musec << " musec" << std::endl;
 

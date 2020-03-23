@@ -50,18 +50,30 @@ __kernel void box_blur(__global uchar* out, __global const uchar* in, int rows, 
         return;
     }
 
-    const double multiplier = 1.0 / (k_size * k_size);
     const int center_shift = (k_size - 1) / 2;
 
-    int sum = 0;
+    // prepare lines in advance
+    __global const uchar* in_lines[MAX_WINDOW] = {};
     for (int i = 0; i < k_size; ++i) {
         const int ii = fix(idx_i + i - center_shift, rows - 1);
+        in_lines[i] = in + ii * cols;
+    }
+
+    // prepare column indices in advance
+    int js[MAX_WINDOW] = {};
+    for (int j = 0; j < k_size; ++j) {
+        js[j] = fix(idx_j + j - center_shift, cols - 1);
+    }
+
+    // main loop
+    uint sum = 0;
+    for (int i = 0; i < k_size; ++i) {
         for (int j = 0; j < k_size; ++j) {
-            const int jj = fix(idx_j + j - center_shift, cols - 1);
-            sum += in[ii * cols + jj];
+            sum += in_lines[ i ][ js[j] ];
         }
     }
 
+    const double multiplier = 1.0 / (k_size * k_size);
     out[idx_i * cols + idx_j] = round(multiplier * sum);
 }
 
@@ -72,15 +84,29 @@ double zncc(__global const uchar* left, uchar l_mean, __global const uchar* righ
     int sum = 0;
     double std_left = 0.0, std_right = 0.0;
 
+    // prepare lines in advance
+    __global const uchar* left_lines[MAX_WINDOW] = {};
+    __global const uchar* right_lines[MAX_WINDOW] = {};
     for (int i = 0; i < k_size; ++i) {
         const int ii = fix(idx_i + i - center_shift, rows - 1);
+        left_lines[i] = left + ii * cols;
+        right_lines[i] = right + ii * cols;
+    }
 
+    // prepare column indices in advance
+    int js1[MAX_WINDOW] = {};
+    int js2[MAX_WINDOW] = {};
+    for (int j = 0; j < k_size; ++j) {
+        const int jj = idx_j + j - center_shift;
+        js1[j] = fix(jj, cols - 1);
+        js2[j] = fix(jj + d, cols - 1);
+    }
+
+    // main loop
+    for (int i = 0; i < k_size; ++i) {
         for (int j = 0; j < k_size; ++j) {
-            const int jj1 = fix(idx_j + j - center_shift, cols - 1);
-            const int jj2 = fix(idx_j + j - center_shift + d, cols - 1);
-
-            const int left_pixel = (int)(left[ii * cols + jj1]) - (int)(l_mean);
-            const int right_pixel = (int)(right[ii * cols + jj2]) - (int)(r_mean);
+            const int left_pixel = (int)(left_lines[ i ][ js1[j] ]) - (int)(l_mean);
+            const int right_pixel = (int)(right_lines[ i ][ js2[j] ]) - (int)(r_mean);
 
             sum += left_pixel * right_pixel;
 
@@ -231,7 +257,7 @@ cv::Mat stereo_compute_disparity(const cv::Mat& left, const cv::Mat& right, int 
     // execute kernels
 
     // use global sizes
-    size_t work_group_sizes[] = {3, 3};
+    size_t work_group_sizes[] = {1, 256};
     // work items number must be divisible (no remainder) by the size of the work group
     size_t work_items_sizes[] = {
         size_t(std::ceil(double(rows) / work_group_sizes[0])) * work_group_sizes[0],
@@ -298,7 +324,7 @@ cv::Mat stereo_compute_disparity(const cv::Mat& left, const cv::Mat& right, int 
         ocl_set_kernel_args(e.kernels[3], map_l2r_mem.memory, rows, cols, disparity);
 
         // special 1d sizes for fill occlusions
-        size_t work_group_sizes[] = {10};
+        size_t work_group_sizes[] = {2};
         // work items number must be divisible (no remainder) by the size of the work group
         size_t work_items_sizes[] = {
             size_t(std::ceil(double(rows) / work_group_sizes[0])) * work_group_sizes[0],
