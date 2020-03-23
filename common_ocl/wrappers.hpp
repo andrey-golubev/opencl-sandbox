@@ -28,5 +28,5 @@ struct OclMem {
     }
 
     operator cl_mem() { return memory; }
-    operator cl_mem*() { return &memory; }
+    operator void*() { return &memory; }
 };

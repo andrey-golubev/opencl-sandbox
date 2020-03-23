@@ -4,8 +4,9 @@
 #include "common_ocl/utils.hpp"
 
 #include <string>
-
+#include <utility>
 #include <vector>
+
 struct OclPrimitives {
     cl_platform_id platform_id = nullptr;
     cl_device_id device_id = nullptr;
@@ -133,3 +134,23 @@ struct OclExecutor {
         }
     }
 };
+
+template<int I, int... Is, typename Arg, typename... Args>
+static void ocl_set_kernel_args(cl_kernel k, Arg head, Args... tail) {
+    ocl_set_kernel_args<I>(k, head);
+    ocl_set_kernel_args<Is...>(k, tail...);
+}
+
+template<int I, typename Arg> static void ocl_set_kernel_args(cl_kernel k, Arg arg) {
+    OCL_GUARD(clSetKernelArg(k, I, sizeof(Arg), &arg));
+}
+
+template<typename... Args, int... Is>
+static void ocl_set_kernel_args_medium(cl_kernel k, std::integer_sequence<int, Is...> seq,
+                                       Args... args) {
+    ocl_set_kernel_args<Is...>(k, args...);
+}
+
+template<typename... Args> static void ocl_set_kernel_args(cl_kernel k, Args... args) {
+    ocl_set_kernel_args_medium(k, std::make_integer_sequence<int, sizeof...(Args)>{}, args...);
+}

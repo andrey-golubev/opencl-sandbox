@@ -232,19 +232,15 @@ cv::Mat stereo_compute_disparity(const cv::Mat& left, const cv::Mat& right, int 
 
     // run for left image
     {
-        OCL_GUARD(clSetKernelArg(e.kernels[0], 0, sizeof(cl_mem), &l_mean_mem));
-        OCL_GUARD(clSetKernelArg(e.kernels[0], 1, sizeof(cl_mem), &l_mem));
-        OCL_GUARD(clSetKernelArg(e.kernels[0], 2, sizeof(int), &rows));
-        OCL_GUARD(clSetKernelArg(e.kernels[0], 3, sizeof(int), &cols));
-        OCL_GUARD(clSetKernelArg(e.kernels[0], 4, sizeof(int), &stereo_common::MAX_WINDOW));
+        ocl_set_kernel_args(e.kernels[0], l_mean_mem.memory, l_mem.memory, rows, cols,
+                            stereo_common::MAX_WINDOW);
 
         e.run_nd_range(2, work_items_sizes, work_group_sizes, 0);
     }
 
     // run for right image
     {
-        OCL_GUARD(clSetKernelArg(e.kernels[0], 0, sizeof(cl_mem), &r_mean_mem));
-        OCL_GUARD(clSetKernelArg(e.kernels[0], 1, sizeof(cl_mem), &r_mem));
+        ocl_set_kernel_args(e.kernels[0], (cl_mem)r_mean_mem, (cl_mem)r_mem);
         // other params remain as is
 
         e.run_nd_range(2, work_items_sizes, work_group_sizes, 0);
@@ -258,34 +254,18 @@ cv::Mat stereo_compute_disparity(const cv::Mat& left, const cv::Mat& right, int 
 
     // run for l2r
     {
-        OCL_GUARD(clSetKernelArg(e.kernels[1], 0, sizeof(cl_mem), &map_l2r_mem));
-        OCL_GUARD(clSetKernelArg(e.kernels[1], 1, sizeof(cl_mem), &l_mem));
-        OCL_GUARD(clSetKernelArg(e.kernels[1], 2, sizeof(cl_mem), &l_mean_mem));
-        OCL_GUARD(clSetKernelArg(e.kernels[1], 3, sizeof(cl_mem), &r_mem));
-        OCL_GUARD(clSetKernelArg(e.kernels[1], 4, sizeof(cl_mem), &r_mean_mem));
-
-        OCL_GUARD(clSetKernelArg(e.kernels[1], 5, sizeof(int), &rows));
-        OCL_GUARD(clSetKernelArg(e.kernels[1], 6, sizeof(int), &cols));
-        OCL_GUARD(clSetKernelArg(e.kernels[1], 7, sizeof(int), &stereo_common::MAX_WINDOW));
-
-        const int d_first = -disparity, d_last = 0;
-        OCL_GUARD(clSetKernelArg(e.kernels[1], 8, sizeof(int), &d_first));
-        OCL_GUARD(clSetKernelArg(e.kernels[1], 9, sizeof(int), &d_last));
+        ocl_set_kernel_args(e.kernels[1], map_l2r_mem.memory, l_mem.memory, l_mean_mem.memory,
+                            r_mem.memory, r_mean_mem.memory, rows, cols, stereo_common::MAX_WINDOW,
+                            -disparity, 0);
 
         e.run_nd_range(2, work_items_sizes, work_group_sizes, 1);
     }
 
     // run for r2l
     {
-        OCL_GUARD(clSetKernelArg(e.kernels[1], 0, sizeof(cl_mem), &map_r2l_mem));
-        OCL_GUARD(clSetKernelArg(e.kernels[1], 1, sizeof(cl_mem), &r_mem));
-        OCL_GUARD(clSetKernelArg(e.kernels[1], 2, sizeof(cl_mem), &r_mean_mem));
-        OCL_GUARD(clSetKernelArg(e.kernels[1], 3, sizeof(cl_mem), &l_mem));
-        OCL_GUARD(clSetKernelArg(e.kernels[1], 4, sizeof(cl_mem), &l_mean_mem));
-
-        const int d_first = 0, d_last = disparity;
-        OCL_GUARD(clSetKernelArg(e.kernels[1], 8, sizeof(int), &d_first));
-        OCL_GUARD(clSetKernelArg(e.kernels[1], 9, sizeof(int), &d_last));
+        ocl_set_kernel_args(e.kernels[1], map_r2l_mem.memory, r_mem.memory, r_mean_mem.memory,
+                            l_mem.memory, l_mean_mem.memory);
+        ocl_set_kernel_args<8, 9>(e.kernels[1], 0, disparity);
         // other params remain as is
 
         e.run_nd_range(2, work_items_sizes, work_group_sizes, 1);
@@ -294,11 +274,8 @@ cv::Mat stereo_compute_disparity(const cv::Mat& left, const cv::Mat& right, int 
     // cross check maps:
     {
         // params: __global uchar* l2r, __global const uchar* r2l, int rows, int cols, int disparity
-        OCL_GUARD(clSetKernelArg(e.kernels[2], 0, sizeof(cl_mem), &map_l2r_mem));
-        OCL_GUARD(clSetKernelArg(e.kernels[2], 1, sizeof(cl_mem), &map_r2l_mem));
-        OCL_GUARD(clSetKernelArg(e.kernels[2], 2, sizeof(int), &rows));
-        OCL_GUARD(clSetKernelArg(e.kernels[2], 3, sizeof(int), &cols));
-        OCL_GUARD(clSetKernelArg(e.kernels[2], 4, sizeof(int), &disparity));
+        ocl_set_kernel_args(e.kernels[2], map_l2r_mem.memory, map_r2l_mem.memory, rows, cols,
+                            disparity);
 
         e.run_nd_range(2, work_items_sizes, work_group_sizes, 2);
     }
@@ -306,10 +283,7 @@ cv::Mat stereo_compute_disparity(const cv::Mat& left, const cv::Mat& right, int 
     // fill occlusions:
     {
         // params: __global uchar* data, int rows, int cols, int disparity
-        OCL_GUARD(clSetKernelArg(e.kernels[3], 0, sizeof(cl_mem), &map_l2r_mem));
-        OCL_GUARD(clSetKernelArg(e.kernels[3], 1, sizeof(int), &rows));
-        OCL_GUARD(clSetKernelArg(e.kernels[3], 2, sizeof(int), &cols));
-        OCL_GUARD(clSetKernelArg(e.kernels[3], 3, sizeof(int), &disparity));
+        ocl_set_kernel_args(e.kernels[3], map_l2r_mem.memory, rows, cols, disparity);
 
         // special 1d sizes for fill occlusions
         size_t work_group_sizes[] = {10};
