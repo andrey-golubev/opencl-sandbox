@@ -25,27 +25,6 @@ namespace stereo_cpp_opt {
 // interface:
 cv::Mat stereo_compute_disparity(const cv::Mat& left, const cv::Mat& right, int disparity);
 
-int fix(int v, int max_v) {
-    if (v < 0) {
-        return -v;
-    } else if (v > max_v) {
-        const int diff = (v - max_v);
-        return max_v - diff;
-    }
-    return v;
-}
-
-int fix(int v, int min_v, int max_v) {
-    if (v < min_v) {
-        const int diff = (min_v - v);
-        return min_v + diff;
-    } else if (v > max_v) {
-        const int diff = (v - max_v);
-        return max_v - diff;
-    }
-    return v;
-}
-
 constexpr const int UINT8_NLANES = cv::v_uint8::nlanes;  // SIMD specific constant
 
 // copy row

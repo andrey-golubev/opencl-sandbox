@@ -10,16 +10,6 @@
 #include "stereo_common.hpp"
 
 namespace stereo_cpp_base {
-int fix(int v, int max_v) {
-    if (v < 0) {
-        return -v;
-    } else if (v > max_v) {
-        const int diff = (v - max_v);
-        return max_v - diff;
-    }
-    return v;
-}
-
 // List of functions:
 
 // applies box blur filter
@@ -100,7 +90,8 @@ cv::Mat make_disparity_map(const cv::Mat& left, const cv::Mat& left_mean, const 
 
             uchar l_mean = left_mean.data[idx_i * cols + idx_j];
             for (int d = d_first; d <= d_last; ++d) {
-                uchar r_mean = right_mean.data[idx_i * cols + fix(idx_j + d, cols - 1)];
+                uchar r_mean =
+                    right_mean.data[idx_i * cols + stereo_common::fix(idx_j + d, cols - 1)];
                 double v = _kernel_zncc(left.data, l_mean, right.data, r_mean, rows, cols,
                                         window_size, idx_i, idx_j, d);
                 if (max_zncc < v) {
@@ -157,9 +148,9 @@ uchar _kernel_box_blur(const uchar* in, int idx_i, int idx_j, int rows, int cols
 
     int sum = 0;
     for (int i = 0; i < k_size; ++i) {
-        const int ii = fix(idx_i + i - center_shift, rows - 1);
+        const int ii = stereo_common::fix(idx_i + i - center_shift, rows - 1);
         for (int j = 0; j < k_size; ++j) {
-            const int jj = fix(idx_j + j - center_shift, cols - 1);
+            const int jj = stereo_common::fix(idx_j + j - center_shift, cols - 1);
             sum += in[ii * cols + jj];
         }
     }
@@ -176,11 +167,11 @@ double _kernel_zncc(const uchar* left, uchar l_mean, const uchar* right, uchar r
     // TODO: look at cv::integral for speed-up
 
     for (int i = 0; i < k_size; ++i) {
-        const int ii = fix(idx_i + i - center_shift, rows - 1);
+        const int ii = stereo_common::fix(idx_i + i - center_shift, rows - 1);
 
         for (int j = 0; j < k_size; ++j) {
-            const int jj1 = fix(idx_j + j - center_shift, cols - 1);
-            const int jj2 = fix(idx_j + j - center_shift + d, cols - 1);
+            const int jj1 = stereo_common::fix(idx_j + j - center_shift, cols - 1);
+            const int jj2 = stereo_common::fix(idx_j + j - center_shift + d, cols - 1);
 
             const int left_pixel = int(left[ii * cols + jj1]) - int(l_mean);
             const int right_pixel = int(right[ii * cols + jj2]) - int(r_mean);

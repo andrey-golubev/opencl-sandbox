@@ -12,6 +12,8 @@
 #include "stereo_disparity_cpp_inl.hpp"
 // CPP optimized stereo algo:
 #include "stereo_disparity_cpp_opt_inl.hpp"
+// OCL stereo algo:
+#include "stereo_disparity_ocl_inl.hpp"
 
 // PFM image reader:
 #include "pfm_reader.hpp"
@@ -56,10 +58,10 @@ std::string TEST_DATA_FOLDER = "";
 
 void declare_tests() {
     TEST(INDEX_FIX_FUNCTION) {
-        REQUIRE(stereo_cpp_opt::fix(9, 10, 12) == 11);
-        REQUIRE(stereo_cpp_opt::fix(-1, 0, 5) == 1);
-        REQUIRE(stereo_cpp_opt::fix(6, 7, 9) == 8);
-        REQUIRE(stereo_cpp_opt::fix(13, 10, 12) == 11);
+        REQUIRE(stereo_common::fix(9, 10, 12) == 11);
+        REQUIRE(stereo_common::fix(-1, 0, 5) == 1);
+        REQUIRE(stereo_common::fix(6, 7, 9) == 8);
+        REQUIRE(stereo_common::fix(13, 10, 12) == 11);
     };
     TEST(BOX_BLUR_CPP) {
         for (const auto& size : TEST_SIZES) {
@@ -222,6 +224,37 @@ void declare_tests() {
             REQUIRE(base_disp.size() == opt_disp.size());
 
             REQUIRE(cv::countNonZero(base_disp != opt_disp) == 0);
+        }
+    };
+
+    TEST(DISPARITY_MAP_BASE_VS_OCL) {
+        for (auto append : {"/backpack/", "/umbrella/"}) {
+            std::string folder = TEST_DATA_FOLDER + append;
+            cv::Mat left_img = cv::imread(folder + "im0.png");
+            cv::Mat right_img = cv::imread(folder + "im1.png");
+
+            cv::Size resize_to(320, 240);  // resized down for increased speed
+            {
+                cv::resize(left_img, left_img, resize_to);
+                cv::resize(right_img, right_img, resize_to);
+            }
+
+            cv::Mat left, right;
+            cv::cvtColor(left_img, left, cv::COLOR_BGR2GRAY);
+            cv::cvtColor(right_img, right, cv::COLOR_BGR2GRAY);
+
+            // test code:
+            int max_disp = 50;
+            cv::Mat cpp_disp, ocl_disp;
+
+            cpp_disp = stereo_cpp_base::stereo_compute_disparity(left, right, max_disp);
+            ocl_disp = stereo_ocl_base::stereo_compute_disparity(left, right, max_disp, platform_id,
+                                                                 device_id);
+
+            REQUIRE(cpp_disp.type() == ocl_disp.type());
+            REQUIRE(cpp_disp.size() == ocl_disp.size());
+
+            REQUIRE(cv::countNonZero(cpp_disp != ocl_disp) == 0);
         }
     };
 }
