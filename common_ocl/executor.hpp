@@ -145,7 +145,7 @@ template<int I, typename Arg> static void ocl_set_kernel_args(cl_kernel k, Arg a
     OCL_GUARD(clSetKernelArg(k, I, sizeof(Arg), &arg));
 }
 
-template<typename... Args, int... Is>
+template<int... Is, typename... Args>
 static void ocl_set_kernel_args_medium(cl_kernel k, std::integer_sequence<int, Is...> seq,
                                        Args... args) {
     ocl_set_kernel_args<Is...>(k, args...);

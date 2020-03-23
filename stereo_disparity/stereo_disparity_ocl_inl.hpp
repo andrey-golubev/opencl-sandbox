@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cmath>
+#include <regex>
 #include <utility>
 
 #include <opencv2/core.hpp>
@@ -13,11 +14,8 @@
 #include "stereo_common.hpp"
 
 namespace stereo_ocl_base {
-
-// TODO: defines must be taken from stereo_common instead of hard-coded in the string - replace
-//       special symbols before providing string to OpenCL?
 // TODO: optimize indices in box_blur and other kernels
-const std::string program_str(R"(
+std::string program_str(R"(
 // helper functions:
 int fix(int v, int max_v) {
     if (v < 0) {
@@ -36,10 +34,10 @@ bool out_of_bounds(int x, int l, int r) {
 }
 
 // defines:
-#define EPS 0.0005
-#define UNKNOWN_DISPARITY 0
-#define MAX_WINDOW 11
-#define MAX_BORDER 5
+#define EPS <re:EPS>
+#define UNKNOWN_DISPARITY <re:UNKNOWN_DISPARITY>
+#define MAX_WINDOW <re:MAX_WINDOW>
+#define MAX_BORDER <re:MAX_BORDER>
 
 // kernels and subroutines:
 __kernel void box_blur(__global uchar* out, __global const uchar* in, int rows, int cols,
@@ -170,6 +168,18 @@ __kernel void fill_occlusions_disparity(__global uchar* data, int rows, int cols
 }
 )");
 
+template<typename T> void replace_param(std::string& string, std::string search_for, T param) {
+    std::regex re(search_for);
+    string = std::regex_replace(string, re, std::to_string(param));
+}
+
+void set_parameters(std::string& ocl_program) {
+    replace_param(ocl_program, "<re:EPS>", stereo_common::EPS);
+    replace_param(ocl_program, "<re:UNKNOWN_DISPARITY>", stereo_common::UNKNOWN_DISPARITY);
+    replace_param(ocl_program, "<re:MAX_WINDOW>", stereo_common::MAX_WINDOW);
+    replace_param(ocl_program, "<re:MAX_BORDER>", stereo_common::MAX_BORDER);
+}
+
 cv::Mat stereo_compute_disparity(const cv::Mat& left, const cv::Mat& right, int disparity,
                                  size_t platform_idx = 0, size_t device_idx = 0) {
     // sanity checks:
@@ -179,6 +189,8 @@ cv::Mat stereo_compute_disparity(const cv::Mat& left, const cv::Mat& right, int 
     REQUIRE(left.rows == right.rows);
     REQUIRE(left.cols == right.cols);
     REQUIRE(disparity <= std::numeric_limits<uchar>::max());
+
+    set_parameters(program_str);
 
     static OclExecutor e(
         OclPrimitives(platform_idx, device_idx), program_str,
@@ -240,7 +252,7 @@ cv::Mat stereo_compute_disparity(const cv::Mat& left, const cv::Mat& right, int 
 
     // run for right image
     {
-        ocl_set_kernel_args(e.kernels[0], (cl_mem)r_mean_mem, (cl_mem)r_mem);
+        ocl_set_kernel_args(e.kernels[0], r_mean_mem.memory, r_mem.memory);
         // other params remain as is
 
         e.run_nd_range(2, work_items_sizes, work_group_sizes, 0);
