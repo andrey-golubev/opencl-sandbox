@@ -355,7 +355,8 @@ cv::Mat stereo_compute_disparity(const cv::Mat& left, const cv::Mat& right, int 
 
     constexpr const double arbitrary_scale = 0.05;
     // process k lines per OpenCL run - this appears to improve the speed drastically (why?)
-    const int k = std::round(arbitrary_scale * rows);  // TODO: figure out better approach
+    // TODO: figure out better approach
+    const int k = std::max(1, int(std::round(arbitrary_scale * rows)));
     for (int y = 0; y < rows; y += k) {
         const int height = std::min(k, rows - y);
 

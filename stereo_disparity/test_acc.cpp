@@ -49,10 +49,7 @@ const cv::Size TEST_SIZES[] = {
 };
 
 const cv::Size DISPARITY_TEST_SIZES[] = {
-    cv::Size(320, 240),
-    cv::Size(99, 99),
-    cv::Size(137, 80),
-    cv::Size(77, 16),
+    cv::Size(320, 240), cv::Size(99, 99), cv::Size(137, 80), cv::Size(77, 16), cv::Size(59, 6),
 };
 
 cv::Mat test_make_mean(const cv::Mat& in, int k_size) {
