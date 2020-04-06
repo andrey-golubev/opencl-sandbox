@@ -629,7 +629,7 @@ cv::Mat stereo_compute_disparity(const cv::Mat& left, const cv::Mat& right, int 
     REQUIRE(left.cols == right.cols);
     REQUIRE(disparity <= std::numeric_limits<uchar>::max());
     REQUIRE(left.rows > stereo_common::MAX_BORDER);
-    REQUIRE(left.cols > disparity);
+    REQUIRE(left.cols > disparity + stereo_common::MAX_BORDER);
 
     // if there are not enough rows < max threads, just parallelize each row
     const int threads = std::min(thr::get_max_threads(), left.rows);
