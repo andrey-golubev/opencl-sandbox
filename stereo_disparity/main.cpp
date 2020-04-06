@@ -17,7 +17,7 @@ namespace {
 void print_usage(const char* program_name) {
     PRINTLN("Usage: " + std::string(program_name) +
             " IMAGE_LEFT IMAGE_RIGHT [ALGO_VERSION] [MAX_DISPARITY]\n" +
-            "  ALGO_VERSION:\n  0 - C++ basic\n  1 - C++ optimized\n  2 - OpenCL basic");
+            "  ALGO_VERSION:\n  0 - C++ basic\n  1 - C++ optimized\n  2 - OpenCL");
 }
 
 template<typename CharT, typename Traits = std::char_traits<CharT>>
@@ -34,8 +34,21 @@ std::vector<std::basic_string<CharT>> split(const std::basic_string<CharT>& src,
 enum AlgoType {
     CPP_BASIC = 0,
     CPP_OPT = 1,
-    OCL_BASIC = 2,
+    OCL = 2,
 };
+
+std::string algo2str(int t) {
+    switch (t) {
+    case CPP_BASIC:
+        return "C++ basic";
+    case CPP_OPT:
+        return "C++ optimized";
+    case OCL:
+        return "OpenCL";
+    default:
+        throw std::runtime_error("Unknown algorithm version");
+    }
+}
 }  // namespace
 
 // debug controls
@@ -72,19 +85,19 @@ int main(int argc, char* argv[]) {
     cv::cvtColor(bgr_right, right, cv::COLOR_BGR2GRAY);
 
 #if RESIZE
-    cv::Mat left_, right_;
-    cv::resize(left, left_, cv::Size(640, 480));
-    cv::resize(right, right_, cv::Size(640, 480));
-    left = left_;
-    right = right_;
+    const auto input_size = left.size();
+    constexpr double scale = 0.5;
+    auto size = cv::Size(input_size.width * 0.5, input_size.height * scale);
+    cv::resize(left, left, size);
+    cv::resize(right, right, size);
 #endif
 
     // find disparity
     cv::Mat map;
     uint64_t musec = 0;
+    PRINTLN("Running " + algo2str(algo_version) + " version");
     switch (algo_version) {
     case CPP_BASIC: {
-        PRINTLN("Running C++ basic version");
         musec = measure(
             1,
             [&]() { map = stereo_cpp_base::stereo_compute_disparity(left, right, max_disparity); },
@@ -92,15 +105,13 @@ int main(int argc, char* argv[]) {
         break;
     }
     case CPP_OPT: {
-        PRINTLN("Running C++ optimized version");
         musec = measure(
             1,
             [&]() { map = stereo_cpp_opt::stereo_compute_disparity(left, right, max_disparity); },
             false);
         break;
     }
-    case OCL_BASIC: {
-        PRINTLN("Running OpenCL basic version");
+    case OCL: {
         musec = measure(
             1,
             [&]() { map = stereo_ocl_base::stereo_compute_disparity(left, right, max_disparity); },

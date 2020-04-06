@@ -61,6 +61,8 @@ cv::Mat stereo_compute_disparity(const cv::Mat& left, const cv::Mat& right, int 
     REQUIRE(left.rows == right.rows);
     REQUIRE(left.cols == right.cols);
     REQUIRE(disparity <= std::numeric_limits<uchar>::max());
+    REQUIRE(left.rows > stereo_common::MAX_BORDER);
+    REQUIRE(left.cols > disparity);
 
     // 1. find disparity maps (L2R and R2L):
     cv::Mat map_l2r, map_r2l;

@@ -13,6 +13,8 @@
 
 #include "stereo_common.hpp"
 
+#include "stereo_disparity_cpp_opt_inl.hpp"  // TODO: remove this include
+
 namespace stereo_ocl_base {
 // TODO: optimize indices in box_blur and other kernels
 std::string program_str(R"(
@@ -27,10 +29,7 @@ int fix(int v, int max_v) {
     return v;
 }
 bool out_of_bounds(int x, int l, int r) {
-    if (x < l || x > r) {
-        return true;
-    }
-    return false;
+    return x < l || x > r;
 }
 
 // defines:
@@ -55,7 +54,7 @@ __kernel void box_blur(__global uchar* out, __global const uchar* in, int rows, 
     // prepare lines in advance
     __global const uchar* in_lines[MAX_WINDOW] = {};
     for (int i = 0; i < k_size; ++i) {
-        const int ii = fix(idx_i + i - center_shift, rows - 1);
+        const int ii = idx_i + i - center_shift + MAX_BORDER;
         in_lines[i] = in + ii * cols;
     }
 
@@ -88,7 +87,7 @@ double zncc(__global const uchar* left, uchar l_mean, __global const uchar* righ
     __global const uchar* left_lines[MAX_WINDOW] = {};
     __global const uchar* right_lines[MAX_WINDOW] = {};
     for (int i = 0; i < k_size; ++i) {
-        const int ii = fix(idx_i + i - center_shift, rows - 1);
+        const int ii = idx_i + i - center_shift + MAX_BORDER;
         left_lines[i] = left + ii * cols;
         right_lines[i] = right + ii * cols;
     }
@@ -206,32 +205,26 @@ void set_parameters(std::string& ocl_program) {
     replace_param(ocl_program, "<re:MAX_BORDER>", stereo_common::MAX_BORDER);
 }
 
-cv::Mat stereo_compute_disparity(const cv::Mat& left, const cv::Mat& right, int disparity,
-                                 size_t platform_idx = 0, size_t device_idx = 0) {
-    // sanity checks:
-    REQUIRE(left.type() == CV_8UC1);
-    REQUIRE(left.type() == right.type());
-    REQUIRE(left.dims == 2);
-    REQUIRE(left.rows == right.rows);
-    REQUIRE(left.cols == right.cols);
-    REQUIRE(disparity <= std::numeric_limits<uchar>::max());
-
-    set_parameters(program_str);
-
+void _internal_stereo_compute_disparity(cv::Mat& out, const cv::Mat& left, const cv::Mat& right,
+                                        int disparity, size_t platform_idx = 0,
+                                        size_t device_idx = 0) {
     static OclExecutor e(
         OclPrimitives(platform_idx, device_idx), program_str,
         {"box_blur", "make_disparity_map", "cross_check_disparity", "fill_occlusions_disparity"});
 
+    constexpr const int border = stereo_common::MAX_BORDER;
+
     const size_t memory_size = left.total() * left.elemSize();  // in bytes
+    const size_t memory_size_border = (left.rows + (border * 2)) * left.cols * left.elemSize();
     const int rows = left.rows, cols = left.cols;
 
     // allocate input buffers
     OclMem l_mem;
     OCL_GUARD_RET(l_mem = clCreateBuffer(e.p.context, CL_MEM_READ_ONLY | CL_MEM_USE_HOST_PTR,
-                                         memory_size, left.data, &ret));
+                                         memory_size_border, left.data, &ret));
     OclMem r_mem;
     OCL_GUARD_RET(r_mem = clCreateBuffer(e.p.context, CL_MEM_READ_ONLY | CL_MEM_USE_HOST_PTR,
-                                         memory_size, right.data, &ret));
+                                         memory_size_border, right.data, &ret));
 
     // allocate intermediate buffers
     // for box blur:
@@ -248,11 +241,9 @@ cv::Mat stereo_compute_disparity(const cv::Mat& left, const cv::Mat& right, int 
                       clCreateBuffer(e.p.context, CL_MEM_READ_WRITE, memory_size, nullptr, &ret));
 
     // allocate output buffers
-    cv::Mat map_l2r = cv::Mat::zeros(left.size(), CV_8UC1);
-    REQUIRE(memory_size == (map_l2r.total() * map_l2r.elemSize()));
     OclMem map_l2r_mem;
     OCL_GUARD_RET(map_l2r_mem = clCreateBuffer(e.p.context, CL_MEM_READ_WRITE | CL_MEM_USE_HOST_PTR,
-                                               memory_size, map_l2r.data, &ret));
+                                               memory_size, out.data, &ret));
 
     // execute kernels
 
@@ -324,7 +315,7 @@ cv::Mat stereo_compute_disparity(const cv::Mat& left, const cv::Mat& right, int 
         ocl_set_kernel_args(e.kernels[3], map_l2r_mem.memory, rows, cols, disparity);
 
         // special 1d sizes for fill occlusions
-        size_t work_group_sizes[] = {2};
+        size_t work_group_sizes[] = {256};
         // work items number must be divisible (no remainder) by the size of the work group
         size_t work_items_sizes[] = {
             size_t(std::ceil(double(rows) / work_group_sizes[0])) * work_group_sizes[0],
@@ -336,6 +327,47 @@ cv::Mat stereo_compute_disparity(const cv::Mat& left, const cv::Mat& right, int 
     // read output back into this process' memory
     OCL_GUARD_RET(clEnqueueMapBuffer(e.queue, map_l2r_mem, CL_TRUE, CL_MAP_READ, 0, memory_size, 0,
                                      nullptr, nullptr, &ret));
+}
+
+cv::Mat stereo_compute_disparity(const cv::Mat& left, const cv::Mat& right, int disparity,
+                                 size_t platform_idx = 0, size_t device_idx = 0) {
+    // sanity checks:
+    REQUIRE(left.type() == CV_8UC1);
+    REQUIRE(left.type() == right.type());
+    REQUIRE(left.dims == 2);
+    REQUIRE(left.rows == right.rows);
+    REQUIRE(left.cols == right.cols);
+    REQUIRE(disparity <= std::numeric_limits<uchar>::max());
+    REQUIRE(left.rows > stereo_common::MAX_BORDER);
+    REQUIRE(left.cols > disparity);
+
+    set_parameters(program_str);
+
+    const int rows = left.rows, cols = left.cols;
+    constexpr const int border = stereo_common::MAX_BORDER;
+
+    // extend inputs with row borders
+    cv::Mat in_left = stereo_cpp_opt::copy_make_border(left, border, 0);
+    cv::Mat in_right = stereo_cpp_opt::copy_make_border(right, border, 0);
+
+    // allocate output buffers
+    cv::Mat map_l2r = cv::Mat::zeros(left.size(), CV_8UC1);
+
+    constexpr const double arbitrary_scale = 0.05;
+    // process k lines per OpenCL run - this appears to improve the speed drastically (why?)
+    const int k = std::round(arbitrary_scale * rows);  // TODO: figure out better approach
+    for (int y = 0; y < rows; y += k) {
+        const int height = std::min(k, rows - y);
+
+        // get ROI of inputs and output
+        cv::Mat left_roi = in_left(cv::Rect(0, y, cols, height));
+        cv::Mat right_roi = in_right(cv::Rect(0, y, cols, height));
+        cv::Mat map_l2r_roi = map_l2r(cv::Rect(0, y, cols, height));
+
+        // run OpenCL code for a slice
+        _internal_stereo_compute_disparity(map_l2r_roi, left_roi, right_roi, disparity,
+                                           platform_idx, device_idx);
+    }
 
     return map_l2r;
 }

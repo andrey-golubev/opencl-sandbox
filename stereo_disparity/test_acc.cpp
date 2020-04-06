@@ -48,6 +48,13 @@ const cv::Size TEST_SIZES[] = {
     cv::Size(12, 12),     cv::Size(200, 5),   cv::Size(5, 5),
 };
 
+const cv::Size DISPARITY_TEST_SIZES[] = {
+    cv::Size(320, 240),
+    cv::Size(99, 99),
+    cv::Size(137, 80),
+    cv::Size(77, 16),
+};
+
 cv::Mat test_make_mean(const cv::Mat& in, int k_size) {
     cv::Mat out;
     cv::boxFilter(in, out, -1, cv::Size(k_size, k_size));
@@ -159,20 +166,19 @@ void declare_tests() {
             cv::Mat right_img = cv::imread(folder + "im1.png");
 
 #if SHOW
-            cv::Size resize_to(640, 480);  // resized down for increased speed
+            cv::Size sz(640, 480);  // resized down for increased speed
 #else
-            cv::Size resize_to(160, 120);  // resized down for increased speed
+            cv::Size sz(160, 120);  // resized down for increased speed
 #endif
             {
-                cv::resize(left_img, left_img, resize_to);
-                cv::resize(right_img, right_img, resize_to);
+                cv::resize(left_img, left_img, sz);
+                cv::resize(right_img, right_img, sz);
             }
 
             cv::Mat left, right;
             cv::cvtColor(left_img, left, cv::COLOR_BGR2GRAY);
             cv::cvtColor(right_img, right, cv::COLOR_BGR2GRAY);
 
-            // test code:
             cv::Mat cpp_disp;
 
 #if SHOW
@@ -203,27 +209,27 @@ void declare_tests() {
             cv::Mat left_img = cv::imread(folder + "im0.png");
             cv::Mat right_img = cv::imread(folder + "im1.png");
 
-            cv::Size resize_to(320, 240);  // resized down for increased speed
-            {
-                cv::resize(left_img, left_img, resize_to);
-                cv::resize(right_img, right_img, resize_to);
+            for (auto sz : DISPARITY_TEST_SIZES) {
+                {
+                    cv::resize(left_img, left_img, sz);
+                    cv::resize(right_img, right_img, sz);
+                }
+
+                cv::Mat left, right;
+                cv::cvtColor(left_img, left, cv::COLOR_BGR2GRAY);
+                cv::cvtColor(right_img, right, cv::COLOR_BGR2GRAY);
+
+                int max_disp = 50;
+                cv::Mat base_disp, opt_disp;
+
+                base_disp = stereo_cpp_base::stereo_compute_disparity(left, right, max_disp);
+                opt_disp = stereo_cpp_opt::stereo_compute_disparity(left, right, max_disp);
+
+                REQUIRE(base_disp.type() == opt_disp.type());
+                REQUIRE(base_disp.size() == opt_disp.size());
+
+                REQUIRE(cv::countNonZero(base_disp != opt_disp) == 0);
             }
-
-            cv::Mat left, right;
-            cv::cvtColor(left_img, left, cv::COLOR_BGR2GRAY);
-            cv::cvtColor(right_img, right, cv::COLOR_BGR2GRAY);
-
-            // test code:
-            int max_disp = 50;
-            cv::Mat base_disp, opt_disp;
-
-            base_disp = stereo_cpp_base::stereo_compute_disparity(left, right, max_disp);
-            opt_disp = stereo_cpp_opt::stereo_compute_disparity(left, right, max_disp);
-
-            REQUIRE(base_disp.type() == opt_disp.type());
-            REQUIRE(base_disp.size() == opt_disp.size());
-
-            REQUIRE(cv::countNonZero(base_disp != opt_disp) == 0);
         }
     };
 
@@ -233,28 +239,28 @@ void declare_tests() {
             cv::Mat left_img = cv::imread(folder + "im0.png");
             cv::Mat right_img = cv::imread(folder + "im1.png");
 
-            cv::Size resize_to(320, 240);  // resized down for increased speed
-            {
-                cv::resize(left_img, left_img, resize_to);
-                cv::resize(right_img, right_img, resize_to);
+            for (auto sz : DISPARITY_TEST_SIZES) {
+                {
+                    cv::resize(left_img, left_img, sz);
+                    cv::resize(right_img, right_img, sz);
+                }
+
+                cv::Mat left, right;
+                cv::cvtColor(left_img, left, cv::COLOR_BGR2GRAY);
+                cv::cvtColor(right_img, right, cv::COLOR_BGR2GRAY);
+
+                int max_disp = 50;
+                cv::Mat cpp_disp, ocl_disp;
+
+                cpp_disp = stereo_cpp_base::stereo_compute_disparity(left, right, max_disp);
+                ocl_disp = stereo_ocl_base::stereo_compute_disparity(left, right, max_disp,
+                                                                     platform_id, device_id);
+
+                REQUIRE(cpp_disp.type() == ocl_disp.type());
+                REQUIRE(cpp_disp.size() == ocl_disp.size());
+
+                REQUIRE(cv::countNonZero(cpp_disp != ocl_disp) == 0);
             }
-
-            cv::Mat left, right;
-            cv::cvtColor(left_img, left, cv::COLOR_BGR2GRAY);
-            cv::cvtColor(right_img, right, cv::COLOR_BGR2GRAY);
-
-            // test code:
-            int max_disp = 50;
-            cv::Mat cpp_disp, ocl_disp;
-
-            cpp_disp = stereo_cpp_base::stereo_compute_disparity(left, right, max_disp);
-            ocl_disp = stereo_ocl_base::stereo_compute_disparity(left, right, max_disp, platform_id,
-                                                                 device_id);
-
-            REQUIRE(cpp_disp.type() == ocl_disp.type());
-            REQUIRE(cpp_disp.size() == ocl_disp.size());
-
-            REQUIRE(cv::countNonZero(cpp_disp != ocl_disp) == 0);
         }
     };
 }
