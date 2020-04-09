@@ -53,7 +53,7 @@ std::string algo2str(int t) {
 
 // debug controls
 #define SHOW_WINDOW 0
-#define RESIZE 0
+#define RESIZE 1
 
 int main(int argc, char* argv[]) {
     if (argc < 3 || argc > 5) {
@@ -87,7 +87,7 @@ int main(int argc, char* argv[]) {
 #if RESIZE
     const auto input_size = left.size();
     constexpr double scale = 0.5;
-    auto size = cv::Size(input_size.width * 0.5, input_size.height * scale);
+    auto size = cv::Size(input_size.width * scale, input_size.height * scale);
     cv::resize(left, left, size);
     cv::resize(right, right, size);
 #endif

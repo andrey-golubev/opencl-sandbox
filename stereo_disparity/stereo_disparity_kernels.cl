@@ -85,9 +85,9 @@ double zncc(__global const uchar* left, uchar l_mean, __global const uchar* righ
     for (int i = 0; i < k_size; ++i) {
         // prefetch window
         __global const uchar* left_line = left_lines[i];
-        prefetch(left_line + js1[0], k_size);
+        prefetch(left_line + (idx_j - center_shift), k_size);
         __global const uchar* right_line = right_lines[i];
-        prefetch(right_line + js2[0], k_size);
+        prefetch(right_line + (idx_j - center_shift + d), k_size);
 
         // compute metric
         for (int j = 0; j < k_size; ++j) {

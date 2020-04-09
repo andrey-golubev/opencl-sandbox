@@ -11,9 +11,11 @@
 
 #include <CL/cl.h>
 
-void ocl_guard(int value, const char* expr) {
-    REQUIRE2(value == CL_SUCCESS,
-             expr + std::string(" == ") + std::to_string(value) + " and != CL_SUCCESS(0)");
+void ocl_guard(int value, const char* expr, const char* file, int line) {
+    std::stringstream ss;
+    ss << "In file " << file << ", line " << line << ": " << expr << " == " << value
+       << " and != CL_SUCCESS(0)";
+    REQUIRE2(value == CL_SUCCESS, ss.str());
     return;
 }
 template<typename ErrorHandler>
@@ -21,7 +23,7 @@ void ocl_guard_custom(int value, const char* expr, ErrorHandler handle) {
     REQUIRE_CUSTOM(value == CL_SUCCESS, expr, handle);
     return;
 }
-#define OCL_GUARD(expr) ocl_guard((expr), #expr)
+#define OCL_GUARD(expr) ocl_guard((expr), #expr, __FILE__, __LINE__)
 #define OCL_GUARD_RET(expr)                                                                        \
     {                                                                                              \
         cl_int ret = CL_SUCCESS;                                                                   \

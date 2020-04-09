@@ -53,45 +53,46 @@ std::string get_program() {
     return ocl_program;
 }
 
+struct MemorySizes {
+    size_t input = 0;   // in bytes
+    size_t output = 0;  // in bytes
+};
+
 void _internal_stereo_compute_disparity(cv::Mat& out, const cv::Mat& left, const cv::Mat& right,
-                                        int disparity, size_t platform_idx = 0,
-                                        size_t device_idx = 0) {
+                                        const MemorySizes& sizes, int disparity,
+                                        size_t platform_idx = 0, size_t device_idx = 0) {
     static OclExecutor e(
         OclPrimitives(platform_idx, device_idx), get_program(),
         {"box_blur", "make_disparity_map", "cross_check_disparity", "fill_occlusions_disparity"});
 
-    constexpr const int border = stereo_common::MAX_BORDER;
-
-    const size_t memory_size = left.total() * left.elemSize();  // in bytes
-    const size_t memory_size_border = (left.rows + (border * 2)) * left.cols * left.elemSize();
-    const int rows = left.rows, cols = left.cols;
+    const int rows = out.rows, cols = out.cols;
 
     // allocate input buffers
     OclMem l_mem;
     OCL_GUARD_RET(l_mem = clCreateBuffer(e.p.context, CL_MEM_READ_ONLY | CL_MEM_USE_HOST_PTR,
-                                         memory_size_border, left.data, &ret));
+                                         sizes.input, left.data, &ret));
     OclMem r_mem;
     OCL_GUARD_RET(r_mem = clCreateBuffer(e.p.context, CL_MEM_READ_ONLY | CL_MEM_USE_HOST_PTR,
-                                         memory_size_border, right.data, &ret));
+                                         sizes.input, right.data, &ret));
 
     // allocate intermediate buffers
     // for box blur:
     OclMem l_mean_mem;
     OCL_GUARD_RET(l_mean_mem =
-                      clCreateBuffer(e.p.context, CL_MEM_READ_WRITE, memory_size, nullptr, &ret));
+                      clCreateBuffer(e.p.context, CL_MEM_READ_WRITE, sizes.output, nullptr, &ret));
     OclMem r_mean_mem;
     OCL_GUARD_RET(r_mean_mem =
-                      clCreateBuffer(e.p.context, CL_MEM_READ_WRITE, memory_size, nullptr, &ret));
+                      clCreateBuffer(e.p.context, CL_MEM_READ_WRITE, sizes.output, nullptr, &ret));
 
     // for disparity:
     OclMem map_r2l_mem;
     OCL_GUARD_RET(map_r2l_mem =
-                      clCreateBuffer(e.p.context, CL_MEM_READ_WRITE, memory_size, nullptr, &ret));
+                      clCreateBuffer(e.p.context, CL_MEM_READ_WRITE, sizes.output, nullptr, &ret));
 
     // allocate output buffers
     OclMem map_l2r_mem;
     OCL_GUARD_RET(map_l2r_mem = clCreateBuffer(e.p.context, CL_MEM_READ_WRITE | CL_MEM_USE_HOST_PTR,
-                                               memory_size, out.data, &ret));
+                                               sizes.output, out.data, &ret));
 
     // execute kernels
 
@@ -173,7 +174,7 @@ void _internal_stereo_compute_disparity(cv::Mat& out, const cv::Mat& left, const
     }
 
     // read output back into this process' memory
-    OCL_GUARD_RET(clEnqueueMapBuffer(e.queue, map_l2r_mem, CL_TRUE, CL_MAP_READ, 0, memory_size, 0,
+    OCL_GUARD_RET(clEnqueueMapBuffer(e.queue, map_l2r_mem, CL_TRUE, CL_MAP_READ, 0, sizes.output, 0,
                                      nullptr, nullptr, &ret));
 }
 
@@ -189,7 +190,6 @@ cv::Mat stereo_compute_disparity(const cv::Mat& left, const cv::Mat& right, int 
     REQUIRE(left.rows > stereo_common::MAX_BORDER);
     REQUIRE(left.cols > disparity);
 
-    const int rows = left.rows, cols = left.cols;
     constexpr const int border = stereo_common::MAX_BORDER;
 
     // extend inputs with row borders
@@ -199,6 +199,7 @@ cv::Mat stereo_compute_disparity(const cv::Mat& left, const cv::Mat& right, int 
     // allocate output buffers
     cv::Mat map_l2r = cv::Mat::zeros(left.size(), CV_8UC1);
 
+    const int rows = left.rows, cols = left.cols;
     constexpr const double arbitrary_scale = 0.05;
     // process k lines per OpenCL run - this appears to improve the speed drastically (why?)
     // TODO: figure out better approach
@@ -211,9 +212,14 @@ cv::Mat stereo_compute_disparity(const cv::Mat& left, const cv::Mat& right, int 
         cv::Mat right_roi = in_right(cv::Rect(0, y, cols, height));
         cv::Mat map_l2r_roi = map_l2r(cv::Rect(0, y, cols, height));
 
+        const size_t in_mem_size =
+            (left_roi.rows + border * 2) * left_roi.cols * left_roi.elemSize();
+        const size_t out_mem_size = map_l2r_roi.total() * map_l2r_roi.elemSize();
+
         // run OpenCL code for a slice
-        _internal_stereo_compute_disparity(map_l2r_roi, left_roi, right_roi, disparity,
-                                           platform_idx, device_idx);
+        _internal_stereo_compute_disparity(map_l2r_roi, left_roi, right_roi,
+                                           {in_mem_size, out_mem_size}, disparity, platform_idx,
+                                           device_idx);
     }
 
     return map_l2r;
