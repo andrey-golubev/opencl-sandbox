@@ -103,9 +103,16 @@ double zncc(__global const uchar* left, uchar l_mean, __global const uchar* righ
 
     // main loop
     for (int i = 0; i < k_size; ++i) {
+        // prefetch window
+        __global const uchar* left_line = left_lines[i];
+        prefetch(left_line + js1[0], k_size);
+        __global const uchar* right_line = right_lines[i];
+        prefetch(right_line + js2[0], k_size);
+
+        // compute metric
         for (int j = 0; j < k_size; ++j) {
-            const int left_pixel = (int)(left_lines[ i ][ js1[j] ]) - (int)(l_mean);
-            const int right_pixel = (int)(right_lines[ i ][ js2[j] ]) - (int)(r_mean);
+            const int left_pixel = (int)(left_line[ js1[j] ]) - (int)(l_mean);
+            const int right_pixel = (int)(right_line[ js2[j] ]) - (int)(r_mean);
 
             sum += left_pixel * right_pixel;
 
