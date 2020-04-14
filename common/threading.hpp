@@ -15,6 +15,7 @@
 #include <thread>
 #include <vector>
 #elif THREADS == ADVANCE
+#include "thread_pool.hpp"
 #endif
 
 namespace thr {
@@ -51,12 +52,29 @@ template<typename T, typename Callable> inline void parallel_for(T iters, Callab
     }
 }
 inline int get_max_threads() { return std::thread::hardware_concurrency(); }
-#elif THREADS == ADVANCE  // TODO: implement advance backend
+#elif THREADS == ADVANCE
+inline int get_max_threads() { return std::thread::hardware_concurrency(); }
+
+namespace detail {
+inline ThreadPool& thread_pool() {
+    static ThreadPool pool(std::thread::hardware_concurrency());
+    return pool;
+}
+}  // namespace detail
+
 template<typename T, typename Callable> inline void parallel_for(T iters, Callable f) {
+    auto& pool = detail::thread_pool();
+
+    std::vector<std::future<void>> promises{};
+    promises.reserve(iters);
+
     for (T i = 0; i < iters; ++i) {
-        f(i, iters);
+        promises.emplace_back(pool.add_task(f, i, iters));
+    }
+
+    for (auto& promise : promises) {
+        promise.wait();
     }
 }
-inline int get_max_threads() { return 1; }
 #endif
 }  // namespace thr
