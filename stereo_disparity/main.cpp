@@ -53,7 +53,7 @@ std::string algo2str(int t) {
 
 // debug controls
 #define SHOW_WINDOW 0
-#define RESIZE 1
+#define RESIZE 0
 
 int main(int argc, char* argv[]) {
     if (argc < 3 || argc > 5) {
