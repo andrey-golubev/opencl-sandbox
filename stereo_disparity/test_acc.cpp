@@ -200,7 +200,7 @@ void declare_tests() {
 #endif
     };
 
-    TEST(DISPARITY_MAP_BASE_VS_OPT) {
+    TEST(DISPARITY_MAP_OPT) {
         for (auto append : {"/backpack/", "/umbrella/"}) {
             std::string folder = TEST_DATA_FOLDER + append;
             cv::Mat left_img = cv::imread(folder + "im0.png");
@@ -219,8 +219,8 @@ void declare_tests() {
                 int max_disp = 50;
                 cv::Mat base_disp, opt_disp;
 
-                base_disp = stereo_cpp_base::stereo_compute_disparity(left, right, max_disp);
                 opt_disp = stereo_cpp_opt::stereo_compute_disparity(left, right, max_disp);
+                base_disp = stereo_cpp_base::stereo_compute_disparity(left, right, max_disp);
 
                 REQUIRE(base_disp.type() == opt_disp.type());
                 REQUIRE(base_disp.size() == opt_disp.size());
@@ -230,7 +230,7 @@ void declare_tests() {
         }
     };
 
-    TEST(DISPARITY_MAP_BASE_VS_OCL) {
+    TEST(DISPARITY_MAP_OCL) {
         for (auto append : {"/backpack/", "/umbrella/"}) {
             std::string folder = TEST_DATA_FOLDER + append;
             cv::Mat left_img = cv::imread(folder + "im0.png");
@@ -249,9 +249,9 @@ void declare_tests() {
                 int max_disp = 50;
                 cv::Mat cpp_disp, ocl_disp;
 
-                cpp_disp = stereo_cpp_base::stereo_compute_disparity(left, right, max_disp);
                 ocl_disp = stereo_ocl_base::stereo_compute_disparity(left, right, max_disp,
                                                                      platform_id, device_id);
+                cpp_disp = stereo_cpp_base::stereo_compute_disparity(left, right, max_disp);
 
                 REQUIRE(cpp_disp.type() == ocl_disp.type());
                 REQUIRE(cpp_disp.size() == ocl_disp.size());
