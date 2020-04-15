@@ -94,26 +94,27 @@ int main(int argc, char* argv[]) {
 
     // find disparity
     cv::Mat map;
-    uint64_t musec = 0;
+    std::uint64_t musec = 0;
+    std::size_t iters = 1;
     PRINTLN("Running " + algo2str(algo_version) + " version");
     switch (algo_version) {
     case CPP_BASIC: {
         musec = measure(
-            1,
+            iters,
             [&]() { map = stereo_cpp_base::stereo_compute_disparity(left, right, max_disparity); },
             false);
         break;
     }
     case CPP_OPT: {
         musec = measure(
-            1,
+            iters,
             [&]() { map = stereo_cpp_opt::stereo_compute_disparity(left, right, max_disparity); },
             false);
         break;
     }
     case OCL: {
         musec = measure(
-            1,
+            iters,
             [&]() { map = stereo_ocl_base::stereo_compute_disparity(left, right, max_disparity); },
             false);
         break;
@@ -122,7 +123,8 @@ int main(int argc, char* argv[]) {
         throw std::runtime_error("Unknown algorithm version");
     }
 
-    OUT << "Time: " << musec << " musec" << std::endl;
+    OUT << "Total time: " << (double(musec) / 1000 / 1000) << " sec" << std::endl;
+    OUT << "Avg time: " << (double(musec) / iters) / 1000 / 1000 << " sec" << std::endl;
 
 #if SHOW_WINDOW
     // show disparity map
