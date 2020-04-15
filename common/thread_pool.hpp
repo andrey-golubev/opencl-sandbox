@@ -51,8 +51,7 @@ struct ThreadPool {
         std::future<return_t> future = this_task.get_future();
         {
             std::unique_lock<std::mutex> lock(m_queue_mutex);
-            auto task_medium = [](std::packaged_task<return_t()>& t) -> void { t(); };
-            m_queue.emplace_back(std::bind(task_medium, std::move(this_task)));
+            m_queue.emplace_back([t = std::move(this_task)]() mutable { t(); });
         }
         m_queue_cv.notify_one();
         return future;
